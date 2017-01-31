@@ -1,0 +1,21 @@
+wutLua.ImportType( "UnityEngine.GameObject" )
+
+gn = 1234
+gs = "xyz"
+gt = {
+	n = gn,
+	s = gs,
+	t = {
+		b = gb,
+	},
+}
+
+gn = 4321
+gs = "zyx"
+
+function gf( n1, n2, go )
+	--local newGO = UnityEngine.GameObject( "NewGameObject" )
+	local goName = go.name
+	local goString = go:ToString()
+	return n1 + n2, goName .. ' - ' .. goString
+end
