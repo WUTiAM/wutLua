@@ -35,12 +35,19 @@
 			List<Type> types = new List<Type>() { typeof( UnityEngine.Object ), typeof( UnityEngine.GameObject ) };
 			foreach( Type type in types )
 			{
-				Members members = _CollectMembers( type );
-				_GenerateCode( type, members );
+				Members members = _CollectTypeMembers( type );
+				_GenerateCodeForType( type, members );
 			}
+
+			_GenerateCodeForBinder( types );
+
+			_currentStreamWriter = null;
+			_currentIndent = 0;
+
+			AssetDatabase.Refresh();
 		}
 
-		static Members _CollectMembers( Type type )
+		static Members _CollectTypeMembers( Type type )
 		{
 			Members members = new Members();
 
@@ -89,27 +96,6 @@
 					}
 					sameNameMethods.Add( mi );
 				}
-			}
-
-			Debug.Log( "Constructors: -----------------------------------" );
-			foreach( ConstructorInfo ci in members.constructors )
-			{
-				Debug.Log( ci.GetParameters().Length );
-			}
-			Debug.Log( "Static Methods: -----------------------------------" );
-			foreach( var pair in members.staticMethods )
-			{
-				Debug.Log( "_static_" + pair.Key );
-			}
-			Debug.Log( "Methods: -----------------------------------" );
-			foreach( var pair in members.methods )
-			{
-				Debug.Log( "_" + pair.Key );
-			}
-			Debug.Log( "Properties: -----------------------------------" );
-			foreach( PropertyInfo pi in members.properties )
-			{
-				Debug.Log( pi.Name );
 			}
 
 			return members;
@@ -189,8 +175,7 @@
 				|| memberName.Equals( "Equals", StringComparison.Ordinal )
 				|| memberName.Equals( "GetEnumerator", StringComparison.Ordinal )
 				|| memberName.Equals( "GetHashCode", StringComparison.Ordinal )
-				|| memberName.Equals( "GetType", StringComparison.Ordinal )
-				|| memberName.Equals( "ToString", StringComparison.Ordinal ) )
+				|| memberName.Equals( "GetType", StringComparison.Ordinal ) )
 			{
 				return true;
 			}
@@ -198,42 +183,25 @@
 			return false;
 		}
 
-		static void _GenerateCode( Type type, Members members )
+		static void _GenerateCodeForType( Type type, Members members )
 		{
 			string className = "LuaBind_" + type.FullName.Replace( '.', '_' );
 			string path = Path.Combine( _GENERATE_ROOT_PATH, className + ".cs" );
 
 			using( _currentStreamWriter = new StreamWriter( path, false, Encoding.UTF8 ) )
 			{
+				_currentIndent = 0;
+
 				_WriteLine( "namespace wutLuaBind" );
 				_WriteLine( "{" );
 				{
 					_WriteLine( "using System;" );
 					_WriteLine( "using wutLua;" );
 					_WriteLine( "" );
-					_WriteLine( "public class {0}1 : LuaBindBase",
-						className );
+					_WriteLine( "public class {0} : LuaBindBase", className );
 					_WriteLine( "{" );
 					{
-						_WriteLine( "public static void Register( LuaState luaState )" );
-						_WriteLine( "{" );
-						{
-							_WriteLine( "_StartToRegisterTypeMembers( luaState, typeof( {0} ), {1} );",
-								type.FullName,
-								members.constructors.Count > 0 ? "_Constructor" : "null" );
-							foreach( var pair in members.staticMethods )
-							{
-								_WriteLine( "_RegisterMember( \"{0}\", _static_{0} );", pair.Key );
-							}
-							_WriteLine( "" );
-
-							_WriteLine( "_StartToRegisterObjectMembers( luaState, typeof( {0} ) );", type.FullName );
-							foreach( var pair in members.methods )
-							{
-								_WriteLine( "_RegisterMember( \"{0}\", _{0} );", pair.Key );
-							}
-						}
-						_WriteLine( "}" );
+						_WriteRegister( type, members );
 
 						_WriteConstructorAccessor( members.constructors );
 						foreach( var pair in members.staticMethods )
@@ -244,13 +212,45 @@
 						{
 							_WriteMethodAccessor( pair.Key, false, pair.Value );
 						}
+						foreach( PropertyInfo pi in members.properties )
+						{
+							_WritePropertyAccessor( pi );
+						}
 					}
 					_WriteLine( "}" );
 				}
 				_WriteLine( "}" );
 			}
+		}
 
-			AssetDatabase.Refresh();
+		static void _WriteRegister( Type type, Members members )
+		{
+			_WriteLine( "public static void Register( LuaState luaState )" );
+			_WriteLine( "{" );
+			{
+				_WriteLine( "_StartToRegisterTypeMembers( luaState, typeof( {0} ), {1} );",
+					type.FullName,
+					members.constructors.Count > 0 ? "_Constructor" : "null" );
+				foreach( var pair in members.staticMethods )
+				{
+					_WriteLine( "_RegisterMember( \"{0}\", _static_{0} );", pair.Key );
+				}
+				_WriteLine( "" );
+
+				_WriteLine( "_StartToRegisterObjectMembers( luaState, typeof( {0} ) );", type.FullName );
+				foreach( var pair in members.methods )
+				{
+					_WriteLine( "_RegisterMember( \"{0}\", _{0} );", pair.Key );
+				}
+				foreach( PropertyInfo pi in members.properties )
+				{
+					_WriteLine( "_RegisterMember( \"{0}\", {1}, {2} );",
+						pi.Name,
+						pi.GetGetMethod() != null ? string.Format( "_{0}_Getter", pi.Name ) : "null",
+						pi.GetSetMethod() != null ? string.Format( "_{0}_Setter", pi.Name ) : "null" );
+				}
+			}
+			_WriteLine( "}" );
 		}
 
 		static void _WriteConstructorAccessor( List<ConstructorInfo> overridedMethods )
@@ -477,31 +477,61 @@
 			_WriteLine( "}" );
 		}
 
-		static void _WriteLine( string line, params object[] args )
+		static void _WritePropertyAccessor( PropertyInfo propertyInfo )
 		{
-			if( args.Length > 0 )
+			if( propertyInfo.GetGetMethod() != null )
 			{
-				line = string.Format( line, args );
-			}
-
-			if( line.EndsWith( "}", StringComparison.Ordinal ) )
-			{
-				--_currentIndent;
-			}
-
-			if( !string.IsNullOrEmpty( line ) )
-			{
-				for( int i = 1; i <= _currentIndent; ++i )
+				_WriteLine( "" );
+				_WriteLine( "[MonoPInvokeCallback( typeof( LuaCSFunction ) )]" );
+				_WriteLine( "static int _{0}_Getter( IntPtr L )", propertyInfo.Name );
+				_WriteLine( "{" );
 				{
-					_currentStreamWriter.Write( '\t' );
+					_WriteLine( "LuaState luaState = LuaState.Get( L );" );
+					_WriteLine( "" );
+					_WriteLine( "try" );
+					_WriteLine( "{" );
+					{
+						_WriteLine( "{0} self = luaState.ToCSObject( 1 ) as {0};", propertyInfo.DeclaringType );
+						_WriteLine( "luaState.PushObject( self.{0} );", propertyInfo.Name );
+						_WriteLine( "" );
+						_WriteLine( "return 1;" );
+					}
+					_WriteLine( "}" );
+					_WriteLine( "catch( Exception e )" );
+					_WriteLine( "{" );
+					{
+						_WriteLine( "return LuaLib.luaL_error( L, e.ToString() );" );
+					}
+					_WriteLine( "}" );
 				}
+				_WriteLine( "}" );
 			}
-
-			_currentStreamWriter.WriteLine( line );
-
-			if( line.StartsWith( "{", StringComparison.Ordinal ) )
+			if( propertyInfo.GetSetMethod() != null )
 			{
-				++_currentIndent;
+				_WriteLine( "" );
+				_WriteLine( "[MonoPInvokeCallback( typeof( LuaCSFunction ) )]" );
+				_WriteLine( "static int _{0}_Setter( IntPtr L )", propertyInfo.Name );
+				_WriteLine( "{" );
+				{
+					_WriteLine( "LuaState luaState = LuaState.Get( L );" );
+					_WriteLine( "" );
+					_WriteLine( "try" );
+					_WriteLine( "{" );
+					{
+						_WriteLine( "{0} self = luaState.ToCSObject( 1 ) as {0};", propertyInfo.DeclaringType );
+						_WriteLine( "self.{0} = ({1}) luaState.ToObject( 2 );", propertyInfo.Name, propertyInfo.PropertyType );
+						_WriteLine( "" );
+						_WriteLine( "return 0;" );
+					}
+					_WriteLine( "}" );
+					_WriteLine( "catch( Exception e )" );
+					_WriteLine( "{" );
+					{
+						_WriteLine( "return LuaLib.luaL_error( L, e.ToString() );" );
+					}
+					_WriteLine( "}" );
+				}
+				_WriteLine( "}" );
 			}
 		}
 
@@ -558,7 +588,7 @@
 			{
 				typeName = typeName.Substring( 0, typeName.IndexOf( '[' ) );
 			}
-			typeName = typeName.Replace( "+", "." );
+//			typeName = typeName.Replace( "+", "." );
 
 			string gaName = "<";
 			Type[] genericArguments = type.GetGenericArguments();
@@ -580,6 +610,66 @@
 		static bool _IsParamArray( ParameterInfo pi )
 		{
 			return pi.GetCustomAttributes( typeof( ParamArrayAttribute ), false ).Any();
+		}
+
+		static void _GenerateCodeForBinder( List<Type> types )
+		{
+			string path = Path.Combine( _GENERATE_ROOT_PATH, "LuaBinder.cs" );
+
+			using( _currentStreamWriter = new StreamWriter( path, false, Encoding.UTF8 ) )
+			{
+				_currentIndent = 0;
+
+				_WriteLine( "namespace wutLua" );
+				_WriteLine( "{" );
+				{
+					_WriteLine( "using wutLuaBind;" );
+					_WriteLine( "" );
+					_WriteLine( "public partial class LuaBinder" );
+					_WriteLine( "{" );
+					{
+						_WriteLine( "static partial void _Initialize( LuaState luaState )" );
+						_WriteLine( "{" );
+						{
+							foreach( Type type in types )
+							{
+								_WriteLine( "LuaBind_{0}.Register( luaState );", type.FullName.Replace( '.', '_' ) );
+							}
+						}
+						_WriteLine( "}" );
+					}
+					_WriteLine( "}" );
+				}
+				_WriteLine( "}" );
+			}
+		}
+
+		static void _WriteLine( string line, params object[] args )
+		{
+			if( args.Length > 0 )
+			{
+				line = string.Format( line, args );
+			}
+
+			if( line.EndsWith( "}", StringComparison.Ordinal ) )
+			{
+				--_currentIndent;
+			}
+
+			if( !string.IsNullOrEmpty( line ) )
+			{
+				for( int i = 1; i <= _currentIndent; ++i )
+				{
+					_currentStreamWriter.Write( '\t' );
+				}
+			}
+
+			_currentStreamWriter.WriteLine( line );
+
+			if( line.StartsWith( "{", StringComparison.Ordinal ) )
+			{
+				++_currentIndent;
+			}
 		}
 
 		static void _DeleteAllInDirectory( string dir )
