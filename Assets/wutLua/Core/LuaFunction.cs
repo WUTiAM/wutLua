@@ -12,19 +12,19 @@ namespace wutLua
 		public LuaFunction( LuaState luaState, int index ) : base( luaState )
 		{
 			LuaLib.lua_pushvalue( luaState.L, index );									// |...|f|...|f
-			_Reference = LuaLib.luaL_ref( luaState.L, LuaIndices.LUA_REGISTRYINDEX );	// |...|f|...|		// Registry[reference] = f
+			_RefId = LuaLib.luaL_ref( luaState.L, LuaIndices.LUA_REGISTRYINDEX );	// |...|f|...|		// Registry[reference] = f
 		}
 
 		#region Object members
 
 		public override string ToString()
 		{
-			return "function#" + _Reference.ToString();
+			return "function#" + _RefId.ToString();
 		}
 
 		public override int GetHashCode()
 		{
-			return ( _Reference != 0 ? _Reference : Function.GetHashCode() );
+			return ( _RefId != 0 ? _RefId : Function.GetHashCode() );
 		}
 
 		#endregion
@@ -34,7 +34,7 @@ namespace wutLua
 			IntPtr L = _LuaState.L;
 			int oldTop = LuaLib.lua_gettop( L );
 
-			LuaLib.lua_rawgeti( L, LuaIndices.LUA_REGISTRYINDEX, _Reference );		// |f
+			LuaLib.lua_rawgeti( L, LuaIndices.LUA_REGISTRYINDEX, _RefId );		// |f
 
 			if( args != null )
 			{

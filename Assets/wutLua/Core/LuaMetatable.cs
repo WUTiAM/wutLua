@@ -5,7 +5,7 @@
 
 	public class LuaMetatable : LuaTable
 	{
-		static readonly string _INDEX_META_METHOD_CODE = @"
+		const string _INDEX_META_METHOD_CODE = @"
 local function __index( t, k )
 	local mt = getmetatable( t )
 	local o = nil
@@ -44,13 +44,12 @@ end
 return __index
 		";
 
-		static LuaFunction _indexMetamethod;
 		static LuaCSFunction _newIndexMetamethod;
 		static LuaCSFunction _gcMetamethod;
 		static LuaCSFunction _getBaseMetatableMetamethod;
 		static LuaCSFunction _getMemberMetamethod;
 
-		static Dictionary<int, LuaMetatable> _metatables = new Dictionary<int, LuaMetatable>();
+		LuaState _luaState;
 
 		Type _type;
 		bool _isTypeMetatable;
@@ -62,33 +61,44 @@ return __index
 
 		public LuaMetatable( LuaState luaState, Type type, bool isTypeMetatable ) : base( luaState )
 		{
+			_luaState = luaState;
+
 			IntPtr L = luaState.L;
 
-			_type = type;
-			_isTypeMetatable = isTypeMetatable;
-
-			if( _indexMetamethod == null )
+			if( luaState.MetatableIndexMetamethod == null )
 			{
-				LuaLib.luaL_dostring( L, _INDEX_META_METHOD_CODE );		// |f
-				_indexMetamethod = new LuaFunction( luaState, -1 ); 	// |f
-				LuaLib.lua_pop( L, 1 );									// |
-
+				LuaLib.luaL_dostring( L, _INDEX_META_METHOD_CODE );						// |f
+				luaState.MetatableIndexMetamethod = new LuaFunction( luaState, -1 );	// |f
+				LuaLib.lua_pop( L, 1 );													// |
+			}
+			if( _newIndexMetamethod == null )
+			{
+				_newIndexMetamethod = new LuaCSFunction( _NewIndex );
 				_gcMetamethod = new LuaCSFunction( _GC );
 				_getBaseMetatableMetamethod = new LuaCSFunction( _GetBaseMetatable );
 				_getMemberMetamethod = new LuaCSFunction( _GetMember );
 			}
 
+			_type = type;
+			_isTypeMetatable = isTypeMetatable;
+
 			_indexCacheTable = new LuaTable( luaState );				// |
 
-			RawSet( "__ref", _Reference );								// |		// mt.__ref = _Reference
+			RawSet( "__refId", _RefId );								// |		// mt.__refId = _RefId
 			RawSet( "__indexCache", _indexCacheTable );					// |		// mt.__indexCache = t
-			RawSet( "__index", _indexMetamethod );						// |		// mt.__index = f
+			RawSet( "__index", luaState.MetatableIndexMetamethod );		// |		// mt.__index = f
 			RawSet( "__newindex", _newIndexMetamethod );				// |		// mt.__newindex = csf
 			RawSet( "__gc", _gcMetamethod );							// |		// mt.__index = csf
 			RawSet( "getBaseMetatable", _getBaseMetatableMetamethod );	// |		// mt.getBaseMetatable = csf
 			RawSet( "getMember", _getMemberMetamethod );				// |		// mt.getMember = csf
 
-			_metatables.Add( _Reference, this );
+			luaState.Metatables.Add( _RefId, this );
+		}
+
+		[MonoPInvokeCallback( typeof( LuaCSFunction ) )]
+		static int _NewIndex( IntPtr L )
+		{
+			return 0;
 		}
 
 		[MonoPInvokeCallback( typeof( LuaCSFunction ) )]
@@ -105,6 +115,7 @@ return __index
 		static int _GetBaseMetatable( IntPtr L )
 		{
 			LuaState luaState = LuaState.Get( L );
+
 			LuaMetatable self = _GetSelf( L );
 			if( self._baseMetatable == null )
 			{
@@ -146,8 +157,10 @@ return __index
 		[MonoPInvokeCallback( typeof( LuaCSFunction ) )]
 		static int _GetMember( IntPtr L )
 		{
+			LuaState luaState = LuaState.Get( L );
+
 			string memberName = LuaLib.lua_tostring( L, -1 );
-			object o = LuaState.Get( L ).ToObject( -2 );
+			object o = luaState.ToObject( -2 );
 
 			// TODO: Reflection
 			LuaLib.lua_pushstring( L, memberName + ( o as UnityEngine.Object ).name );
@@ -158,13 +171,15 @@ return __index
 
 		static LuaMetatable _GetSelf( IntPtr L )
 		{
-			LuaLib.lua_pushstring( L, "__ref" );	// |mt|k
+			LuaState luaState = LuaState.Get( L );
+
+			LuaLib.lua_pushstring( L, "__refId" );	// |mt|k
 			LuaLib.lua_rawget( L, -2 );				// |mt|v
-			int reference = (int) LuaLib.lua_tonumber( L, -1 );
+			int refId = (int) LuaLib.lua_tonumber( L, -1 );
 			LuaLib.lua_pop( L, 1 );					// |mt
 
 			LuaMetatable self;
-			_metatables.TryGetValue( reference, out self );
+			luaState.Metatables.TryGetValue( refId, out self );
 
 			return self;
 		}
@@ -192,7 +207,7 @@ return __index
 #region LuaObjectBase members
 		public override void Dispose( bool disposeManagedResources )
 		{
-			_metatables.Remove( _Reference );
+			_luaState.Metatables.Remove( _RefId );
 
 			base.Dispose( disposeManagedResources );
 		}

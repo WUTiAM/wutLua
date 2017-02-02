@@ -20,7 +20,7 @@
 		public LuaTable( LuaState luaState ) : base( luaState )
 		{
 			LuaLib.lua_newtable( luaState.L ); 												// |...|t
-			_Reference = LuaLib.luaL_ref( luaState.L, LuaIndices.LUA_REGISTRYINDEX );		// |...|		// Registry[reference] = t
+			_RefId = LuaLib.luaL_ref( luaState.L, LuaIndices.LUA_REGISTRYINDEX );		// |...|		// Registry[reference] = t
 		}
 
 		public LuaTable( LuaState luaState, int index ) : base( luaState )
@@ -28,14 +28,14 @@
 			if( !LuaLib.lua_isnil( luaState.L, index ) )
 			{
 				LuaLib.lua_pushvalue( luaState.L, index ); 									// |...|t|...|t
-				_Reference = LuaLib.luaL_ref( luaState.L, LuaIndices.LUA_REGISTRYINDEX );	// |...|t|...|		// Registry[reference] = t
+				_RefId = LuaLib.luaL_ref( luaState.L, LuaIndices.LUA_REGISTRYINDEX );	// |...|t|...|		// Registry[reference] = t
 			}
 		}
 
 #region Object members
 		public override string ToString()
 		{
-			return "table#" + _Reference.ToString();
+			return "table#" + _RefId.ToString();
 		}
 #endregion
 
