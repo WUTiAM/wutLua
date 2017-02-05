@@ -228,7 +228,7 @@
 				LuaLib.lua_rawget( L, -2 ); 						// |_G|v1|...|vn-1|vn
 
 				startPos = pos + 1;
-			} while( startPos < path.Length );
+			} while( startPos < path.Length && !LuaLib.lua_isnil( L, -1 ) );
 
 			object o = ToObject( -1 );
 
@@ -242,6 +242,11 @@
 			LuaTypes type = LuaLib.lua_type( L, index );
 			switch( type )
 			{
+				case LuaTypes.LUA_TNONE:
+				case LuaTypes.LUA_TNIL:
+				{
+					return null;
+				}
 				case LuaTypes.LUA_TBOOLEAN:
 				{
 					return LuaLib.lua_toboolean( L, index );
@@ -258,14 +263,14 @@
 				{
 					LuaValueType valueType = LuaValueType.None;
 
-					LuaLib.lua_pushvalue( L, index );								// |t
-					LuaLib.lua_pushstring( L, "__valueType" );						// |t|k
-					LuaLib.lua_rawget( L, -2 );										// |t|vt
-					if( LuaLib.lua_isnil( L, -1 ) )									// |t|vt
+					LuaLib.lua_pushvalue( L, index ); // |t
+					LuaLib.lua_pushstring( L, "__valueType" ); // |t|k
+					LuaLib.lua_rawget( L, -2 ); // |t|vt
+					if( LuaLib.lua_isnil( L, -1 ) ) // |t|vt
 					{
-						valueType = (LuaValueType) LuaLib.lua_tonumber( L, -1 );	// |t|vt
+						valueType = (LuaValueType) LuaLib.lua_tonumber( L, -1 ); // |t|vt
 					}
-					LuaLib.lua_pop( L, 2 );											// |
+					LuaLib.lua_pop( L, 2 ); // |
 
 					switch( valueType )
 					{
@@ -451,23 +456,32 @@
 		{
 			int oldTop = LuaLib.lua_gettop( L );
 
-			LuaLib.lua_pushvalue( L, LuaIndices.LUA_GLOBALSINDEX );								// |_G
+			LuaLib.lua_pushvalue( L, LuaIndices.LUA_GLOBALSINDEX );									// |_G
 
 			int startPos = 0;
 			int pos = path.IndexOf( '.' );
 			while( pos >= 0 )
 			{
-				LuaLib.lua_pushstring( L, path.Substring( startPos, pos - startPos ) ); 		// |_G|k1 or |_G|v1|k2 or |_G|v1|v2|k3 or ...
-				LuaLib.lua_rawget( L, -2 ); 													// |_G|v1 or |_G|v1|v2 or |_G|v1|v2|v3 or ...
+				LuaLib.lua_pushstring( L, path.Substring( startPos, pos - startPos ) ); 			// |_G|k1 or |_G|v1|k2 or |_G|v1|v2|k3 or ...
+				LuaLib.lua_rawget( L, -2 ); 														// |_G|v1 or |_G|v1|v2 or |_G|v1|v2|v3 or ...
+
+				if( LuaLib.lua_isnil( L, -1 ) )
+				{
+					startPos = path.Length;
+					break;
+				}
 
 				startPos = pos + 1;
 				pos = path.IndexOf( '.', startPos );
 			}
 
-			PushObject( value );																// |_G|v1|v2|...|vn-1|o
-			LuaLib.lua_setfield( L, -2, path.Substring( startPos, path.Length - startPos ) );	// |_G|v1|v2|...|vn-1|		// vn-1.kn = o
+			if( startPos < path.Length )
+			{
+				PushObject( value );																// |_G|v1|v2|...|vn-1|o
+				LuaLib.lua_setfield( L, -2, path.Substring( startPos, path.Length - startPos ) );	// |_G|v1|v2|...|vn-1|		// vn-1.kn = o
+			}
 
-			LuaLib.lua_settop( L, oldTop );														// |
+			LuaLib.lua_settop( L, oldTop );															// |
 		}
 
 		public void PushObject( bool o )

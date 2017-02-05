@@ -98,6 +98,8 @@ return __index
 		[MonoPInvokeCallback( typeof( LuaCSFunction ) )]
 		static int _NewIndex( IntPtr L )
 		{
+			// TODO
+
 			return 0;
 		}
 
