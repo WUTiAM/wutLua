@@ -16,6 +16,7 @@
 		{
 			public List<ConstructorInfo> constructors = new List<ConstructorInfo>();
 			public Dictionary<string, List<MethodInfo>> staticMethods = new Dictionary<string, List<MethodInfo>>();
+			public List<PropertyInfo> staticProperties = new List<PropertyInfo>();
 			public Dictionary<string, List<MethodInfo>> methods = new Dictionary<string, List<MethodInfo>>();
 			public List<PropertyInfo> properties = new List<PropertyInfo>();
 		}
@@ -32,7 +33,9 @@
 
 			_DeleteAllInDirectory( _GENERATE_ROOT_PATH );
 
-			List<Type> types = new List<Type>() { typeof( UnityEngine.Object ), typeof( UnityEngine.GameObject ) };
+			List<Type> types = new List<Type>();
+			types.AddRange( Config.LuaBindList );
+
 			foreach( Type type in types )
 			{
 				Members members = _CollectTypeMembers( type );
@@ -56,7 +59,14 @@
 				if( _IsIgnoredProperty( pi ) )
 					continue;
 
-				members.properties.Add( pi );
+				if( ( pi.GetGetMethod() != null && pi.GetGetMethod().IsStatic ) || ( pi.GetSetMethod() != null && pi.GetSetMethod().IsStatic ) )
+				{
+					members.staticProperties.Add( pi );
+				}
+				else
+				{
+					members.properties.Add( pi );
+				}
 			}
 
 			foreach( ConstructorInfo ci in type.GetConstructors( BindingFlags.Instance | BindingFlags.Public ) )
@@ -74,6 +84,10 @@
 
 				if( mi.IsStatic )
 				{
+					// Ignore static properties' getter and setter
+					if( members.staticProperties.Any( pi => pi.GetGetMethod() == mi || pi.GetSetMethod() == mi ) )
+						continue;
+
 					List<MethodInfo> sameNameMethods;
 					if( !members.staticMethods.TryGetValue( mi.Name, out sameNameMethods ) )
 					{
@@ -208,6 +222,10 @@
 						{
 							_WriteMethodAccessor( pair.Key, true, pair.Value );
 						}
+						foreach( PropertyInfo pi in members.staticProperties )
+						{
+							_WritePropertyAccessor( pi );
+						}
 						foreach( var pair in members.methods )
 						{
 							_WriteMethodAccessor( pair.Key, false, pair.Value );
@@ -234,6 +252,13 @@
 				foreach( var pair in members.staticMethods )
 				{
 					_WriteLine( "_RegisterMember( \"{0}\", _static_{0} );", pair.Key );
+				}
+				foreach( PropertyInfo pi in members.staticProperties )
+				{
+					_WriteLine( "_RegisterMember( \"{0}\", {1}, {2} );",
+						pi.Name,
+						pi.GetGetMethod() != null ? string.Format( "_static_{0}_Getter", pi.Name ) : "null",
+						pi.GetSetMethod() != null ? string.Format( "_static_{0}_Setter", pi.Name ) : "null" );
 				}
 				_WriteLine( "" );
 
@@ -398,6 +423,14 @@
 							{
 								p += ", ";
 							}
+							if( pi.ParameterType.IsByRef && pi.IsOut )
+							{
+								p += "out ";
+							}
+							else if( pi.ParameterType.IsByRef )
+							{
+								p += "ref ";
+							}
 							p += string.Format( "arg{0}", i + 1 + offset );
 						}
 						if( methodHasReturn )
@@ -481,9 +514,13 @@
 		{
 			if( propertyInfo.GetGetMethod() != null )
 			{
+				MethodInfo mi = propertyInfo.GetGetMethod();
+
 				_WriteLine( "" );
 				_WriteLine( "[MonoPInvokeCallback( typeof( LuaCSFunction ) )]" );
-				_WriteLine( "static int _{0}_Getter( IntPtr L )", propertyInfo.Name );
+				_WriteLine( "static int {0}_{1}_Getter( IntPtr L )",
+					mi.IsStatic ? "_static" : "",
+					propertyInfo.Name );
 				_WriteLine( "{" );
 				{
 					_WriteLine( "LuaState luaState = LuaState.Get( L );" );
@@ -491,8 +528,13 @@
 					_WriteLine( "try" );
 					_WriteLine( "{" );
 					{
-						_WriteLine( "{0} self = luaState.ToCSObject( 1 ) as {0};", propertyInfo.DeclaringType );
-						_WriteLine( "luaState.PushObject( self.{0} );", propertyInfo.Name );
+						if( !mi.IsStatic )
+						{
+							_WriteLine( "{0} self = luaState.ToCSObject( 1 ) as {0};", propertyInfo.DeclaringType );
+						}
+						_WriteLine( "luaState.PushObject( {0}.{1} );",
+							mi.IsStatic ? propertyInfo.DeclaringType.ToString() : "self",
+							propertyInfo.Name );
 						_WriteLine( "" );
 						_WriteLine( "return 1;" );
 					}
@@ -508,9 +550,13 @@
 			}
 			if( propertyInfo.GetSetMethod() != null )
 			{
+				MethodInfo mi = propertyInfo.GetSetMethod();
+
 				_WriteLine( "" );
 				_WriteLine( "[MonoPInvokeCallback( typeof( LuaCSFunction ) )]" );
-				_WriteLine( "static int _{0}_Setter( IntPtr L )", propertyInfo.Name );
+				_WriteLine( "static int {0}_{1}_Setter( IntPtr L )",
+					mi.IsStatic ? "_static" : "",
+					propertyInfo.Name );
 				_WriteLine( "{" );
 				{
 					_WriteLine( "LuaState luaState = LuaState.Get( L );" );
@@ -518,8 +564,14 @@
 					_WriteLine( "try" );
 					_WriteLine( "{" );
 					{
-						_WriteLine( "{0} self = luaState.ToCSObject( 1 ) as {0};", propertyInfo.DeclaringType );
-						_WriteLine( "self.{0} = ({1}) luaState.ToObject( 2 );", propertyInfo.Name, propertyInfo.PropertyType );
+						if( !mi.IsStatic )
+						{
+							_WriteLine( "{0} self = luaState.ToCSObject( 1 ) as {0};", propertyInfo.DeclaringType );
+						}
+						_WriteLine( "{0}.{1} = ({2}) luaState.ToObject( 2 );",
+							mi.IsStatic ? propertyInfo.DeclaringType.ToString() : "self",
+							propertyInfo.Name,
+							propertyInfo.PropertyType );
 						_WriteLine( "" );
 						_WriteLine( "return 0;" );
 					}
@@ -577,7 +629,11 @@
 			}
 			else
 			{
-				return type.ToString();
+				if( type.IsByRef )
+				{
+					type = type.GetElementType();
+				}
+				return type.ToString().Replace( "+", "." );
 			}
 		}
 
@@ -588,7 +644,7 @@
 			{
 				typeName = typeName.Substring( 0, typeName.IndexOf( '[' ) );
 			}
-//			typeName = typeName.Replace( "+", "." );
+			typeName = typeName.Replace( "+", "." );
 
 			string gaName = "<";
 			Type[] genericArguments = type.GetGenericArguments();

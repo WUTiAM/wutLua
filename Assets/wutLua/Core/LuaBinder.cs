@@ -2,7 +2,14 @@
 {
     using System;
 
-    public sealed class LuaBindIgnoreAttribute : Attribute
+	public sealed class LuaBindAttribute : Attribute
+	{
+		public LuaBindAttribute()
+		{
+		}
+	}
+
+	public sealed class LuaBindIgnoreAttribute : Attribute
     {
 		public LuaBindIgnoreAttribute()
 		{
