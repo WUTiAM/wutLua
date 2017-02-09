@@ -308,13 +308,13 @@
 						{
 							ParameterInfo parameterInfo = parametersInfo[i];
 
-							tc += string.Format( " && {0}", _GetLuaTypeCheckCode( i + 1, parameterInfo ) );
+							tc += string.Format( " && {0}", _GetLuaTypeCheckCode( i + 2, parameterInfo ) );
 
 							if( i > 0 )
 							{
 								p += ", ";
 							}
-							p += string.Format( "arg{0}", i + 1 );
+							p += string.Format( "arg{0}", i + 2 );
 						}
 
 						if( overridedMethods.Count > 1 )
@@ -322,13 +322,13 @@
 							if( !parametersInfo.Any() || !_IsParamArray( parametersInfo.Last() ) )
 							{
 								_WriteLine( "if( argc == {0}{1} )",
-									parametersInfo.Count(),
+									parametersInfo.Count() + 1,
 									tc );
 							}
 							else
 							{
 								_WriteLine( "if( argc >= {0}{1} )",
-									parametersInfo.Count() - 1,
+									parametersInfo.Count(),
 									tc );
 							}
 							_WriteLine( "{" );
@@ -340,7 +340,7 @@
 
 								_WriteLine( "{0} arg{1} = ({0}) luaState.ToObject( {1} );",
 									_GetTypeName( parameterInfo.ParameterType ),
-									i + 1 );
+									i + 2 );
 							}
 
 							if( !methodHasParameters )
@@ -598,18 +598,15 @@
 			}
 			else if( paramType == typeof( bool ) )
 			{
-				return string.Format( "LuaLib.lua_type( L, {0} ) == LuaTypes.LUA_TBOOLEAN",
-					i );
+				return string.Format( "LuaLib.lua_type( L, {0} ) == LuaTypes.LUA_TBOOLEAN", i );
 			}
 			else if( paramType.IsPrimitive )
 			{
-				return string.Format( "LuaLib.lua_type( L, {0} ) == LuaTypes.LUA_TNUMBER",
-					i );
+				return string.Format( "LuaLib.lua_type( L, {0} ) == LuaTypes.LUA_TNUMBER", i );
 			}
 			else if( paramType == typeof( string ) )
 			{
-				return string.Format( "( LuaLib.lua_isnil( L, {0} ) || LuaLib.lua_type( L, {0} ) == LuaTypes.LUA_TSTRING )",
-					i );
+				return string.Format( "( LuaLib.lua_isnil( L, {0} ) || LuaLib.lua_type( L, {0} ) == LuaTypes.LUA_TSTRING )", i );
 			}
 			else
 			{

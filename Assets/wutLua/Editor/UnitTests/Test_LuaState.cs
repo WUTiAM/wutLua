@@ -7,24 +7,6 @@
 	[TestFixture]
 	public class Test_LuaState
 	{
-		const string _LUA_CODE = @"
-gb = true
-gn = 1234
-gn2 = 1234.5678
-gs = 'xyz'
-gt = {
-	n = gn,
-	s = gs,
-	t = {
-		b = gb,
-	},
-}
-
-gn = 4321
-gs = 'zyx'
-		";
-		readonly byte[] _LUA_CODE_BYTES = Encoding.UTF8.GetBytes( _LUA_CODE );
-
 		LuaState _luaState;
 
 		[TestFixtureSetUp]
@@ -53,7 +35,23 @@ gs = 'zyx'
 		[Test]
 		public void GetObject()
 		{
-			_luaState.DoBuffer( _LUA_CODE_BYTES );
+			const string LUA_CODE = @"
+gb = true
+gn = 1234
+gn2 = 1234.5678
+gs = 'xyz'
+gt = {
+	n = gn,
+	s = gs,
+	t = {
+		b = gb,
+	},
+}
+
+gn = 4321
+gs = 'zyx'
+			";
+			_luaState.DoBuffer( Encoding.UTF8.GetBytes( LUA_CODE ) );
 
 			// Get bool
 			Assert.AreEqual( true, _luaState.GetObject( "gb" ) );
@@ -88,21 +86,40 @@ gs = 'zyx'
 		[Test]
 		public void SetObject()
 		{
-			_luaState.SetObject( "gb", false );
-			_luaState.DoBuffer( _LUA_CODE_BYTES );
-
-			Assert.AreEqual( true, _luaState.GetObject( "gb" ) );
-			Assert.AreEqual( true, _luaState.GetObject( "gt.t.b" ) );
-			Assert.AreEqual( null, _luaState.GetObject( "gt.t.s" ) );
+			const string LUA_CODE = @"
+gt = {
+	t = {
+		b = gb,
+	},
+}
+			";
+			_luaState.SetObject( "gb", true );
+			_luaState.DoBuffer( Encoding.UTF8.GetBytes( LUA_CODE ) );
 
 			_luaState.SetObject( "gb", false );
 			_luaState.SetObject( "gt.t.s", "abc" );
 			_luaState.SetObject( "gt.t2.s", "abc" );
 
-			Assert.AreEqual( false, _luaState.GetObject( "gb" ) );
-			Assert.AreEqual( true, _luaState.GetObject( "gt.t.b" ) );
-			Assert.AreEqual( "abc", _luaState.GetObject( "gt.t.s" ) );
-			Assert.AreEqual( null, _luaState.GetObject( "gt.t2.s" ) );
+			const string LUA_CHECK_CODE = @"
+if gb ~= false then
+	return -1
+end
+if gt.t.b ~= true then
+	return -111
+end
+if gt.t.s ~= 'abc' then
+	return -112
+end
+if gt.t2 ~= nil then
+	return -121
+end
+
+return 0
+			";
+			object[] results = _luaState.DoBuffer( Encoding.UTF8.GetBytes( LUA_CHECK_CODE ) );
+
+			Assert.AreEqual( 1, results.Length );
+			Assert.AreEqual( 0, (int)(double) results[0] );
 		}
 
 		[Test]
