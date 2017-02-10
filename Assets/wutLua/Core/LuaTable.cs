@@ -19,7 +19,7 @@
 
 		public LuaTable( LuaState luaState ) : base( luaState )
 		{
-			LuaLib.lua_newtable( luaState.L ); 												// |...|t
+			LuaLib.lua_newtable( luaState.L ); 											// |...|t
 			_RefId = LuaLib.luaL_ref( luaState.L, LuaIndices.LUA_REGISTRYINDEX );		// |...|		// Registry[reference] = t
 		}
 
@@ -27,7 +27,7 @@
 		{
 			if( !LuaLib.lua_isnil( luaState.L, index ) )
 			{
-				LuaLib.lua_pushvalue( luaState.L, index ); 									// |...|t|...|t
+				LuaLib.lua_pushvalue( luaState.L, index ); 								// |...|t|...|t
 				_RefId = LuaLib.luaL_ref( luaState.L, LuaIndices.LUA_REGISTRYINDEX );	// |...|t|...|		// Registry[reference] = t
 			}
 		}

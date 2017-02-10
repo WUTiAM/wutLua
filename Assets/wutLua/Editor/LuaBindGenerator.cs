@@ -377,11 +377,12 @@
 						{
 							for( int i = 0; i < parametersInfo.Count(); ++i )
 							{
-								ParameterInfo parameterInfo = parametersInfo[i];
+								ParameterInfo pi = parametersInfo[i];
 
-								_WriteLine( "{0} arg{1} = ({0}) luaState.ToObject( {1} );",
-									_GetTypeName( parameterInfo.ParameterType ),
-									i + 2 );
+								_WriteLine( "{0} arg{1} = ({0}) luaState.{2}( {1} );",
+									_GetTypeName( pi.ParameterType ),
+									i + 2,
+									pi.ParameterType == typeof( Type ) ? "ToType" : "ToObject" );
 							}
 
 							if( !methodHasParameters )
@@ -541,9 +542,10 @@
 							{
 								ParameterInfo pi = parametersInfo[i];
 
-								_WriteLine( "{0} arg{1} = ({0}) luaState.ToObject( {1} );",
+								_WriteLine( "{0} arg{1} = ({0}) luaState.{2}( {1} );",
 									_GetTypeName( pi.ParameterType ),
-									i + 1 + offset );
+									i + 1 + offset,
+									pi.ParameterType == typeof( Type ) ? "ToType" : "ToObject" );
 							}
 
 							if( !methodHasParameters )

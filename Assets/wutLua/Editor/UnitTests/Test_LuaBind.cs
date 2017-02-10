@@ -36,7 +36,28 @@ namespace wutLua.Test
 		}
 
 		[Test]
-		public void LuaAccessStaticMemberFunction()
+		public void AccessStaticMemberFunction()
+		{
+			GameObject go = new GameObject( "go" );
+
+			const string LUA_CODE = @"
+wutLua.ImportType( 'UnityEngine.GameObject' )
+
+local go = UnityEngine.GameObject.Find( 'go' )
+if go == nil then
+	return -1
+end
+
+return 0
+			";
+			object[] results = _luaState.DoBuffer( Encoding.UTF8.GetBytes( LUA_CODE ) );
+
+			Assert.AreEqual( 1, results.Length );
+			Assert.AreEqual( 0, (int)(double) results[0] );
+		}
+
+		[Test]
+		public void AccessStaticMemberFunctionInParent()
 		{
 			GameObject go = new GameObject( "go" );
 
@@ -51,7 +72,7 @@ go = nil
 		}
 
 		[Test]
-		public void LuaAccessConstructor()
+		public void AccessConstructor()
 		{
 			const string LUA_CODE = @"
 wutLua.ImportType( 'UnityEngine.GameObject' )
@@ -75,7 +96,29 @@ return 0
 		}
 
 		[Test]
-		public void LuaTriggerObjectGC()
+		public void PassTypeAsParam()
+		{
+			Camera go = new Camera();
+
+			const string LUA_CODE = @"
+wutLua.ImportType( 'UnityEngine.Camera' )
+wutLua.ImportType( 'UnityEngine.GameObject' )
+
+local camera = UnityEngine.GameObject.FindObjectOfType( UnityEngine.Camera )
+if camera == nil then
+	return -1
+end
+
+return 0
+			";
+			object[] results = _luaState.DoBuffer( Encoding.UTF8.GetBytes( LUA_CODE ) );
+
+			Assert.AreEqual( 1, results.Length );
+			Assert.AreEqual( 0, (int)(double) results[0] );
+		}
+
+		[Test]
+		public void TriggerObjectGC()
 		{
 			const string LUA_CODE = @"
 wutLua.ImportType( 'UnityEngine.GameObject' )

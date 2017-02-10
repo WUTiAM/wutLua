@@ -23,7 +23,8 @@
 
 		static Dictionary<IntPtr, LuaState> _luaStates = new Dictionary<IntPtr, LuaState>();
 
-		Dictionary<string, LuaTable> _typeTables = new Dictionary<string, LuaTable>();
+		Dictionary<string, Type> _typeNames = new Dictionary<string, Type>();
+		Dictionary<Type, LuaTable> _typeTables = new Dictionary<Type, LuaTable>();
 		Dictionary<Type, LuaMetatable> _typeMetatables = new Dictionary<Type, LuaMetatable>();
 		Dictionary<Type, LuaMetatable> _objectMetatables = new Dictionary<Type, LuaMetatable>();
 
@@ -89,10 +90,12 @@
 		int _ImportType( IntPtr L )
 		{
 			string typeFullName = LuaLib.lua_tostring( L, -1 );
+			Type type;
 			LuaTable typeTable;
-			if( !_typeTables.TryGetValue( typeFullName, out typeTable ) )
+			if( !_typeNames.TryGetValue( typeFullName, out type ) || !_typeTables.TryGetValue( type, out typeTable ) )
 			{
 				// TODO: Reflection
+				typeTable = null;
 			}
 
 			int oldTop = LuaLib.lua_gettop( L );
@@ -138,14 +141,19 @@
 
 			int oldTop = LuaLib.lua_gettop( L );
 
-			typeTable.Push();								// |t
-			typeMetatable.RawSet( "__call", constructor );	// |t			// mt.__call = constructor
-			typeMetatable.Push();							// |t|mt
-			LuaLib.lua_setmetatable( L, -2 );				// |t			// t.metatable = mt
+			typeTable.RawSet( "__typeName", type.ToString() );
+			if( constructor != null )
+			{
+				typeMetatable.RawSet( "__call", constructor );	// |			// mt.__call = constructor
+			}
+			typeTable.Push();									// |t
+			typeMetatable.Push();								// |t|mt
+			LuaLib.lua_setmetatable( L, -2 );					// |t			// t.metatable = mt
 
-			LuaLib.lua_settop( L, oldTop );					// |
+			LuaLib.lua_settop( L, oldTop );						// |
 
-			_typeTables.Add( type.ToString(), typeTable );
+			_typeNames.Add( type.ToString(), type );
+			_typeTables.Add( type, typeTable );
 			_typeMetatables.Add( type, typeMetatable );
 		}
 
@@ -263,14 +271,14 @@
 				{
 					LuaValueType valueType = LuaValueType.None;
 
-					LuaLib.lua_pushvalue( L, index ); // |t
-					LuaLib.lua_pushstring( L, "__valueType" ); // |t|k
-					LuaLib.lua_rawget( L, -2 ); // |t|vt
-					if( LuaLib.lua_isnil( L, -1 ) ) // |t|vt
+					LuaLib.lua_pushvalue( L, index ); 								// |t
+					LuaLib.lua_pushstring( L, "__valueType" ); 						// |t|k
+					LuaLib.lua_rawget( L, -2 );										// |t|vt
+					if( LuaLib.lua_isnil( L, -1 ) )									// |t|vt
 					{
-						valueType = (LuaValueType) LuaLib.lua_tonumber( L, -1 ); // |t|vt
+						valueType = (LuaValueType) LuaLib.lua_tonumber( L, -1 );	// |t|vt
 					}
-					LuaLib.lua_pop( L, 2 ); // |
+					LuaLib.lua_pop( L, 2 ); 										// |
 
 					switch( valueType )
 					{
@@ -319,6 +327,27 @@
 			}
 		}
 
+		public Type ToType( int index )
+		{
+			LuaTypes lt = LuaLib.lua_type( L, index );
+			if( lt == LuaTypes.LUA_TTABLE )
+			{
+				LuaLib.lua_pushstring( L, "__typeName" );	// |k
+				LuaLib.lua_rawget( L, index );				// |v
+
+				if( LuaLib.lua_isstring( L, -1 ) )
+				{
+					Type type;
+					if( _typeNames.TryGetValue( LuaLib.lua_tostring( L, -1 ), out type ) )
+					{
+						return type;
+					}
+				}
+			}
+
+			return null;
+		}
+
 		public LuaTable ToTable( int index )
 		{
 			return new LuaTable( this, index );
@@ -330,15 +359,15 @@
 
 			if( LuaLib.lua_type( L, index ) == LuaTypes.LUA_TTABLE )
 			{
-				LuaLib.lua_rawgeti( L, index, 1 );				// |r
-				color.r = (float) LuaLib.lua_tonumber( L, -1 );	// |r
-				LuaLib.lua_rawgeti( L, index, 2 );				// |r|g
-				color.g = (float) LuaLib.lua_tonumber( L, -1 );	// |r|g
-				LuaLib.lua_rawgeti( L, index, 3 );				// |r|g|b
-				color.b = (float) LuaLib.lua_tonumber( L, -1 );	// |r|g|b
-				LuaLib.lua_rawgeti( L, index, 4 );				// |r|g|b|a
-				color.a = (float) LuaLib.lua_tonumber( L, -1 );	// |r|g|b|a
-				LuaLib.lua_pop( L, 4 );							// |
+				LuaLib.lua_rawgeti( L, index, 1 );					// |r
+				color.r = (float) LuaLib.lua_tonumber( L, -1 );		// |r
+				LuaLib.lua_rawgeti( L, index, 2 );					// |r|g
+				color.g = (float) LuaLib.lua_tonumber( L, -1 );		// |r|g
+				LuaLib.lua_rawgeti( L, index, 3 );					// |r|g|b
+				color.b = (float) LuaLib.lua_tonumber( L, -1 );		// |r|g|b
+				LuaLib.lua_rawgeti( L, index, 4 );					// |r|g|b|a
+				color.a = (float) LuaLib.lua_tonumber( L, -1 );		// |r|g|b|a
+				LuaLib.lua_pop( L, 4 );								// |
 			}
 
 			return color;
