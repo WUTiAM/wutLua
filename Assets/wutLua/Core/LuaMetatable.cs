@@ -106,9 +106,9 @@ return __index
 		[MonoPInvokeCallback( typeof( LuaCSFunction ) )]
 		static int _GC( IntPtr L )
 		{
-			// TODO
-//			LuaLib.lua_touserdata( Lua,  )
-			UnityEngine.Debug.Log( "GC" );
+			LuaState luaState = LuaState.Get( L );
+
+			luaState.GCCSObject( 1 );
 
 			return 0;
 		}

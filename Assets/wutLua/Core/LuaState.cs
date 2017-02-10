@@ -484,6 +484,83 @@
 			LuaLib.lua_settop( L, oldTop );															// |
 		}
 
+		public void PushObject( object o )
+		{
+			if( o == null )
+			{
+				LuaLib.lua_pushnil( L );
+				return;
+			}
+
+			Type type = o.GetType();
+			if( type.IsPrimitive )
+			{
+				switch( Type.GetTypeCode( type ) )
+				{
+					case TypeCode.Boolean:
+					{
+						PushObject( (bool) o );
+						break;
+					}
+					default:
+					{
+						PushObject( Convert.ToDouble( o ) );
+						break;
+					}
+				}
+			}
+			else if( type.IsValueType )
+			{
+				if( type == typeof( UnityEngine.Color ) )
+				{
+					PushObject( (UnityEngine.Color) o );
+				}
+				else if( type == typeof( UnityEngine.Quaternion ) )
+				{
+					PushObject( (UnityEngine.Quaternion) o );
+				}
+				else if( type == typeof( UnityEngine.Vector2 ) )
+				{
+					PushObject( (UnityEngine.Vector2) o );
+				}
+				else if( type == typeof( UnityEngine.Vector3 ) )
+				{
+					PushObject( (UnityEngine.Vector3) o );
+				}
+				else if( type == typeof( UnityEngine.Vector4 ) )
+				{
+					PushObject( (UnityEngine.Vector4) o );
+				}
+				else
+				{
+					// TODO
+				}
+			}
+			else
+			{
+				if( type.IsArray )
+				{
+					PushArray( (Array) o );
+				}
+				else if( type == typeof( string ) )
+				{
+					LuaLib.lua_pushstring( L, (string) o );
+				}
+				else if( type == typeof( LuaCSFunction ) )
+				{
+					LuaLib.lua_pushcsfunction( L, (LuaCSFunction) o );
+				}
+				else if( type.IsSubclassOf( typeof( LuaObjectBase ) ) )
+				{
+					( (LuaObjectBase) o ).Push();
+				}
+				else
+				{
+					PushCSObject( o );
+				}
+			}
+		}
+
 		public void PushObject( bool o )
 		{
 			LuaLib.lua_pushboolean( L, o );
@@ -583,81 +660,9 @@
 			LuaLib.lua_rawseti( L, -2, 4 );		// |t		// t[4] = w
 		}
 
-		public void PushObject( object o )
+		public void PushObject( UnityEngine.Object o )
 		{
-			if( o == null )
-			{
-				LuaLib.lua_pushnil( L );
-				return;
-			}
-
-			Type type = o.GetType();
-			if( type.IsPrimitive )
-			{
-				switch( Type.GetTypeCode( type ) )
-				{
-					case TypeCode.Boolean:
-					{
-						PushObject( (bool) o );
-						break;
-					}
-					default:
-					{
-						PushObject( Convert.ToDouble( o ) );
-						break;
-					}
-				}
-			}
-			else if( type.IsValueType )
-			{
-				if( type == typeof( UnityEngine.Color ) )
-				{
-					PushObject( (UnityEngine.Color) o );
-				}
-				else if( type == typeof( UnityEngine.Quaternion ) )
-				{
-					PushObject( (UnityEngine.Quaternion) o );
-				}
-				else if( type == typeof( UnityEngine.Vector2 ) )
-				{
-					PushObject( (UnityEngine.Vector2) o );
-				}
-				else if( type == typeof( UnityEngine.Vector3 ) )
-				{
-					PushObject( (UnityEngine.Vector3) o );
-				}
-				else if( type == typeof( UnityEngine.Vector4 ) )
-				{
-					PushObject( (UnityEngine.Vector4) o );
-				}
-				else
-				{
-					// TODO
-				}
-			}
-			else
-			{
-				if( type.IsArray )
-				{
-					PushArray( (Array) o );
-				}
-				else if( type == typeof( string ) )
-				{
-					LuaLib.lua_pushstring( L, (string) o );
-				}
-				else if( type == typeof( LuaCSFunction ) )
-				{
-					LuaLib.lua_pushcsfunction( L, (LuaCSFunction) o );
-				}
-				else if( type.IsSubclassOf( typeof( LuaObjectBase ) ) )
-				{
-					( (LuaObjectBase) o ).Push();
-				}
-				else
-				{
-					PushCSObject( o );
-				}
-			}
+			PushCSObject( o );
 		}
 
 		public void PushArray( Array array )
@@ -687,6 +692,12 @@
 
 
 
+		public void GCCSObject( int index )
+		{
+			int objectReference = LuaLib.wutlua_rawuserdata( L, index );
+			UnityEngine.Debug.Log( string.Format( "GC [{0}]: {1}", objectReference, _objects[objectReference].ToString() )  );
+			_objects.Remove( objectReference );
+		}
 
 		public void Close()
 		{

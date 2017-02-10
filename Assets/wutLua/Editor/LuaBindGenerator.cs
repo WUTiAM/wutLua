@@ -298,6 +298,44 @@
 						_WriteLine( "int argc = LuaLib.lua_gettop( L );" );
 					}
 
+					// Sort by param count
+					bool isEveryParamCountUnique = true;
+					overridedMethods.Sort( delegate( ConstructorInfo ci1, ConstructorInfo ci2 )
+					{
+						if( ci1 == ci2 )
+							return 0;
+
+						ParameterInfo[] ci1ParamsInfo = ci1.GetParameters();
+						ParameterInfo[] ci2ParamsInfo = ci2.GetParameters();
+						int ci1ParamCount = ci1ParamsInfo.Count();
+						int ci2ParamCount = ci2ParamsInfo.Count();
+						if( ci1ParamCount > 0 && _IsParamArray( ci1ParamsInfo.Last() ) )
+						{
+							--ci1ParamCount;
+						}
+						if( ci2ParamCount > 0 && _IsParamArray( ci2ParamsInfo.Last() ) )
+						{
+							--ci2ParamCount;
+						}
+
+						if( isEveryParamCountUnique && ci1ParamCount == ci2ParamCount )
+						{
+							isEveryParamCountUnique = false;
+						}
+
+						// Put methods with param array to the last
+						if( ci1ParamCount > 0 && _IsParamArray( ci1ParamsInfo.Last() ) )
+						{
+							ci1ParamCount *= 100;
+						}
+						if( ci2ParamCount > 0 && _IsParamArray( ci2ParamsInfo.Last() ) )
+						{
+							ci2ParamCount *= 100;
+						}
+
+						return ci1ParamCount - ci2ParamCount;
+					});
+
 					foreach( ConstructorInfo ci in overridedMethods )
 					{
 						ParameterInfo[] parametersInfo = ci.GetParameters();
@@ -308,7 +346,10 @@
 						{
 							ParameterInfo parameterInfo = parametersInfo[i];
 
-							tc += string.Format( " && {0}", _GetLuaTypeCheckCode( i + 2, parameterInfo ) );
+							if( !isEveryParamCountUnique )
+							{
+								tc += string.Format( " && {0}", _GetLuaTypeCheckCode( i + 2, parameterInfo ) );
+							}
 
 							if( i > 0 )
 							{
@@ -405,6 +446,44 @@
 						_WriteLine( "{0} self = luaState.ToCSObject( 1 ) as {0};", overridedMethods[0].DeclaringType );
 					}
 
+					// Sort by param count
+					bool isEveryParamCountUnique = true;
+					overridedMethods.Sort( delegate( MethodInfo mi1, MethodInfo mi2 )
+					{
+						if( mi1 == mi2 )
+							return 0;
+
+						ParameterInfo[] mi1ParamsInfo = mi1.GetParameters();
+						ParameterInfo[] mi2ParamsInfo = mi2.GetParameters();
+						int mi1ParamCount = mi1ParamsInfo.Count();
+						int mi2ParamCount = mi2ParamsInfo.Count();
+						if( mi1ParamCount > 0 && _IsParamArray( mi1ParamsInfo.Last() ) )
+						{
+							--mi1ParamCount;
+						}
+						if( mi2ParamCount > 0 && _IsParamArray( mi2ParamsInfo.Last() ) )
+						{
+							--mi2ParamCount;
+						}
+
+						if( isEveryParamCountUnique && mi1ParamCount == mi2ParamCount )
+						{
+							isEveryParamCountUnique = false;
+						}
+
+						// Put methods with param array to the last
+						if( mi1ParamCount > 0 && _IsParamArray( mi1ParamsInfo.Last() ) )
+						{
+							mi1ParamCount *= 100;
+						}
+						if( mi2ParamCount > 0 && _IsParamArray( mi2ParamsInfo.Last() ) )
+						{
+							mi2ParamCount *= 100;
+						}
+
+						return mi1ParamCount - mi2ParamCount;
+					});
+
 					foreach( MethodInfo mi in overridedMethods )
 					{
 						ParameterInfo[] parametersInfo = mi.GetParameters();
@@ -417,7 +496,10 @@
 						{
 							ParameterInfo pi = parametersInfo[i];
 
-							tc += string.Format( " && {0}", _GetLuaTypeCheckCode( i + 1, pi ) );
+							if( !isEveryParamCountUnique )
+							{
+								tc += string.Format( " && {0}", _GetLuaTypeCheckCode( i + 1, pi ) );
+							}
 
 							if( i > 0 )
 							{
