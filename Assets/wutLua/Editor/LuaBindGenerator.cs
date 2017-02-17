@@ -676,9 +676,16 @@
 			Type paramType = pi.ParameterType;
 			if( _IsParamArray( pi ) )
 			{
-				return string.Format( "( LuaLib.lua_type( L, {0} ) == LuaTypes.LUA_TNONE || luaState.CheckParamArray( {0}, typeof( {1} ) ) )",
+				return string.Format(
+					"( LuaLib.lua_type( L, {0} ) == LuaTypes.LUA_TNONE || luaState.CheckParamArray( {0}, typeof( {1} ) ) )",
 					i,
 					_GetTypeName( paramType.GetElementType() ) );
+			}
+			else if( paramType == typeof( Type ) )
+			{
+				return string.Format(
+					"( LuaLib.lua_type( L, {0} ) == LuaTypes.LUA_TTABLE || LuaLib.lua_type( L, {0} ) == LuaTypes.LUA_TSTRING )",
+					i);
 			}
 			else if( paramType == typeof( bool ) )
 			{
@@ -690,7 +697,9 @@
 			}
 			else if( paramType == typeof( string ) )
 			{
-				return string.Format( "( LuaLib.lua_isnil( L, {0} ) || LuaLib.lua_type( L, {0} ) == LuaTypes.LUA_TSTRING )", i );
+				return string.Format(
+					"( LuaLib.lua_isnil( L, {0} ) || LuaLib.lua_type( L, {0} ) == LuaTypes.LUA_TSTRING )",
+					i );
 			}
 			else
 			{
@@ -698,9 +707,7 @@
 					i,
 					_GetTypeName( paramType ) );
 			}
-
-			return "";
-		}
+			}
 
 		static string _GetTypeName( Type type )
 		{

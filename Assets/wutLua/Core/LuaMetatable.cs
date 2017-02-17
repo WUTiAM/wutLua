@@ -1,4 +1,6 @@
-﻿namespace wutLua
+﻿using System.Reflection;
+
+namespace wutLua
 {
 	using System;
 	using System.Collections.Generic;
@@ -32,10 +34,18 @@ local function __index( t, k )
 	if o == nil then
 		-- Try to get memeber by reflection
 		o = mt:getMember( t, k )
+		if o == nil then
+			error( 'Cannot find member ' .. k .. '!' )
+		end
 	end
 
 	if type( o ) == 'table' then
-		return o[1]( t )
+		-- Invoke the property member's getter
+		if o[1] ~= nil then
+			return o[1]( t )
+		else
+			error( 'The property ' .. k .. ' is write-only!' );
+		end
 	else
 		return o
 	end
@@ -43,8 +53,54 @@ end
 
 return __index
 		";
+		const string _NEWINDEX_META_METHOD_CODE = @"
+local function __newindex( t, k, v )
+	local mt = getmetatable( t )
+	local o = nil
 
-		static LuaCSFunction _newIndexMetamethod;
+	-- Try to get member from cache
+	local cmt = mt
+	repeat
+		o = cmt.__indexCache[k]
+		if o ~= nil then
+			if cmt ~= mt then
+				mt.__indexCache[k] = o
+			end
+
+			break
+		else
+			if cmt.__base == nil then -- Haven't cache the base metatable
+				cmt:getBaseMetatable() -- Retrive the base metatable, or False if there's no base type
+			end
+
+			cmt = cmt.__base
+		end
+	until not cmt
+
+	if o == nil then
+		-- Try to get memeber by reflection
+		o = mt:getMember( t, k )
+		if o == nil then
+			error( 'Cannot find member ' .. k .. '!' )
+		end
+	end
+
+	if type( o ) == 'table' then
+		-- Invoke the property member's setter
+		local setter = o[2]
+		if setter ~= nil then
+			return o[2]( t, v )
+		else
+			error( 'The property ' .. k .. ' is readonly!' );
+		end
+	else
+		error( k .. ' is not a property member!' )
+	end
+end
+
+return __newindex
+		";
+
 		static LuaCSFunction _gcMetamethod;
 		static LuaCSFunction _getBaseMetatableMetamethod;
 		static LuaCSFunction _getMemberMetamethod;
@@ -57,8 +113,6 @@ return __index
 
 		LuaTable _indexCacheTable;
 
-		Dictionary<string, object> _memberCache = new Dictionary<string, object>();
-
 		public LuaMetatable( LuaState luaState, Type type, bool isTypeMetatable ) : base( luaState )
 		{
 			_luaState = luaState;
@@ -70,10 +124,12 @@ return __index
 				LuaLib.luaL_dostring( L, _INDEX_META_METHOD_CODE );						// |f
 				luaState.MetatableIndexMetamethod = new LuaFunction( luaState, -1 );	// |f
 				LuaLib.lua_pop( L, 1 );													// |
+				LuaLib.luaL_dostring( L, _NEWINDEX_META_METHOD_CODE );					// |f
+				luaState.MetatableNewIndexMetamethod = new LuaFunction( luaState, -1 );	// |f
+				LuaLib.lua_pop( L, 1 );													// |
 			}
-			if( _newIndexMetamethod == null )
+			if( _gcMetamethod == null )
 			{
-				_newIndexMetamethod = new LuaCSFunction( _NewIndex );
 				_gcMetamethod = new LuaCSFunction( _GC );
 				_getBaseMetatableMetamethod = new LuaCSFunction( _GetBaseMetatable );
 				_getMemberMetamethod = new LuaCSFunction( _GetMember );
@@ -82,25 +138,17 @@ return __index
 			_type = type;
 			_isTypeMetatable = isTypeMetatable;
 
-			_indexCacheTable = new LuaTable( luaState );				// |
+			_indexCacheTable = new LuaTable( luaState );					// |
 
-			RawSet( "__refId", _RefId );								// |		// mt.__refId = _RefId
-			RawSet( "__indexCache", _indexCacheTable );					// |		// mt.__indexCache = t
-			RawSet( "__index", luaState.MetatableIndexMetamethod );		// |		// mt.__index = f
-			RawSet( "__newindex", _newIndexMetamethod );				// |		// mt.__newindex = csf
-			RawSet( "__gc", _gcMetamethod );							// |		// mt.__index = csf
-			RawSet( "getBaseMetatable", _getBaseMetatableMetamethod );	// |		// mt.getBaseMetatable = csf
-			RawSet( "getMember", _getMemberMetamethod );				// |		// mt.getMember = csf
+			RawSet( "__refId", _RefId );									// |		// mt.__refId = _RefId
+			RawSet( "__indexCache", _indexCacheTable );						// |		// mt.__indexCache = t
+			RawSet( "__index", luaState.MetatableIndexMetamethod );			// |		// mt.__index = f
+			RawSet( "__newindex", luaState.MetatableNewIndexMetamethod );	// |		// mt.__newindex = f
+			RawSet( "__gc", _gcMetamethod );								// |		// mt.__index = csf
+			RawSet( "getBaseMetatable", _getBaseMetatableMetamethod );		// |		// mt.getBaseMetatable = csf
+			RawSet( "getMember", _getMemberMetamethod );					// |		// mt.getMember = csf
 
 			luaState.Metatables.Add( _RefId, this );
-		}
-
-		[MonoPInvokeCallback( typeof( LuaCSFunction ) )]
-		static int _NewIndex( IntPtr L )
-		{
-			// TODO
-
-			return 0;
 		}
 
 		[MonoPInvokeCallback( typeof( LuaCSFunction ) )]
@@ -118,14 +166,20 @@ return __index
 		{
 			LuaState luaState = LuaState.Get( L );
 
-			LuaMetatable self = _GetSelf( L );
+			LuaLib.lua_pushstring( L, "__refId" );			// |mt|k
+			LuaLib.lua_rawget( L, 1 );						// |mt|v
+			int refId = (int) LuaLib.lua_tonumber( L, -1 );
+			LuaLib.lua_pop( L, 1 );							// |mt
+
+			LuaMetatable self;
+			luaState.Metatables.TryGetValue( refId, out self );
 			if( self._baseMetatable == null )
 			{
 				Type baseType = self._type.BaseType;
 				if( baseType == null || baseType == typeof( Object ) )
 				{
 					// No base type
-					self.RawSet( "__base", false );			// |		// __base = false
+					self.RawSet( "__base", false );			// |mt		// mt.__base = false
 
 					return 0;
 				}
@@ -145,7 +199,7 @@ return __index
 				}
 			}
 
-			self.RawSet( "__base", self._baseMetatable );	// |		// __base = basemt
+			self.RawSet( "__base", self._baseMetatable );	// |mt		// mt.__base = basemt
 
 			return 0;
 		}
@@ -171,21 +225,6 @@ return __index
 			return 2;
 		}
 
-		static LuaMetatable _GetSelf( IntPtr L )
-		{
-			LuaState luaState = LuaState.Get( L );
-
-			LuaLib.lua_pushstring( L, "__refId" );	// |mt|k
-			LuaLib.lua_rawget( L, -2 );				// |mt|v
-			int refId = (int) LuaLib.lua_tonumber( L, -1 );
-			LuaLib.lua_pop( L, 1 );					// |mt
-
-			LuaMetatable self;
-			luaState.Metatables.TryGetValue( refId, out self );
-
-			return self;
-		}
-
 		public void AddMember( string name, LuaCSFunction getter, LuaCSFunction setter )
 		{
 			IntPtr L = _LuaState.L;
@@ -194,8 +233,24 @@ return __index
 			_indexCacheTable.Push();							// |t
 			LuaLib.lua_pushstring( L, name );					// |t|k
 			LuaLib.lua_newtable( L );							// |t|k|nt
-			LuaLib.lua_pushcsfunction( L, getter );				// |t|k|nt|csf
-			LuaLib.lua_rawseti( L, -2, 1 );						// |t|k|nt		// nt[1] = csf
+			if( getter != null )
+			{
+				LuaLib.lua_pushcsfunction( L, getter );			// |t|k|nt|csf
+			}
+			else
+			{
+				LuaLib.lua_pushnil( L );						// |t|k|nt|nil
+			}
+			LuaLib.lua_rawseti( L, -2, 1 );						// |t|k|nt		// nt[1] = getter
+			if( setter != null )
+			{
+				LuaLib.lua_pushcsfunction( L, setter );			// |t|k|nt|csf
+			}
+			else
+			{
+				LuaLib.lua_pushnil( L );						// |t|k|nt|nil
+			}
+			LuaLib.lua_rawseti( L, -2, 2 );						// |t|k|nt		// nt[2] = setter
 			LuaLib.lua_rawset( L, -3 );							// |t			// t[k] = nt, t == this.__indexCache, k == name
 
 			LuaLib.lua_settop( L, oldTop );						// |

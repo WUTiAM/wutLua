@@ -53,7 +53,7 @@ return 0
 			object[] results = _luaState.DoBuffer( Encoding.UTF8.GetBytes( LUA_CODE ) );
 
 			Assert.AreEqual( 1, results.Length );
-			Assert.AreEqual( 0, (int)(double) results[0] );
+			Assert.AreEqual( 0, results[0] );
 		}
 
 		[Test]
@@ -92,7 +92,26 @@ return 0
 			object[] results = _luaState.DoBuffer( Encoding.UTF8.GetBytes( LUA_CODE ) );
 
 			Assert.AreEqual( 1, results.Length );
-			Assert.AreEqual( 0, (int)(double) results[0] );
+			Assert.AreEqual( 0, results[0] );
+		}
+
+		[Test]
+		public void AccessMemberFunctionInParent()
+		{
+			const string LUA_CODE = @"
+wutLua.ImportType( 'UnityEngine.GameObject' )
+
+local go = UnityEngine.GameObject( 'go' )
+local name = go:ToString()
+local instanceId = go:GetInstanceID()
+
+return name, instanceId
+			";
+			object[] results = _luaState.DoBuffer( Encoding.UTF8.GetBytes( LUA_CODE ) );
+
+			Assert.AreEqual( 2, results.Length );
+			Assert.AreEqual( "go (UnityEngine.GameObject)", results[0] );
+			Assert.IsTrue( results[1] is double );
 		}
 
 		[Test]
@@ -102,9 +121,9 @@ return 0
 
 			const string LUA_CODE = @"
 wutLua.ImportType( 'UnityEngine.Camera' )
-wutLua.ImportType( 'UnityEngine.GameObject' )
+wutLua.ImportType( 'UnityEngine.Object' )
 
-local camera = UnityEngine.GameObject.FindObjectOfType( UnityEngine.Camera )
+local camera = UnityEngine.Object.FindObjectOfType( UnityEngine.Camera )
 if camera == nil then
 	return -1
 end
@@ -114,7 +133,41 @@ return 0
 			object[] results = _luaState.DoBuffer( Encoding.UTF8.GetBytes( LUA_CODE ) );
 
 			Assert.AreEqual( 1, results.Length );
-			Assert.AreEqual( 0, (int)(double) results[0] );
+			Assert.AreEqual( 0, results[0] );
+		}
+
+		[Test]
+		public void AccessMemberProperty()
+		{
+			const string LUA_CODE = @"
+wutLua.ImportType( 'UnityEngine.GameObject' )
+
+local go = UnityEngine.GameObject( 'go' )
+local name = go.name
+go.name = 'gogogo'
+
+return go, name
+			";
+			object[] results = _luaState.DoBuffer( Encoding.UTF8.GetBytes( LUA_CODE ) );
+
+			Assert.AreEqual( 2, results.Length );
+			GameObject go = results[0] as GameObject;
+			Assert.IsTrue( go != null && go.name == "gogogo" );
+			Assert.AreEqual( "go", results[1] );
+		}
+
+		[Test]
+		[ExpectedException( typeof( LuaException ) )]
+		public void AccessInexistedMemberProperty()
+		{
+			const string LUA_CODE = @"
+wutLua.ImportType( 'UnityEngine.GameObject' )
+
+local go = UnityEngine.GameObject( 'go' )
+local notExists = go.notExists
+go.notExists = 123
+			";
+			_luaState.DoBuffer( Encoding.UTF8.GetBytes( LUA_CODE ) );
 		}
 
 		[Test]

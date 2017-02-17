@@ -19,6 +19,7 @@
  		public IntPtr L { get; private set; }
 
 		public LuaFunction MetatableIndexMetamethod;
+		public LuaFunction MetatableNewIndexMetamethod;
 		public Dictionary<int, LuaMetatable> Metatables = new Dictionary<int, LuaMetatable>();
 
 		static Dictionary<IntPtr, LuaState> _luaStates = new Dictionary<IntPtr, LuaState>();

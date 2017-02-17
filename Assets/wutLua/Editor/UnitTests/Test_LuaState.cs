@@ -33,6 +33,25 @@
 		}
 
 		[Test]
+		public void DoBuffer()
+		{
+			const string LUA_CODE = @"
+gs = 'abc'
+local n = 123
+local b = true
+
+return nil, n, b
+			";
+			object[] results = _luaState.DoBuffer( Encoding.UTF8.GetBytes( LUA_CODE ) );
+
+			Assert.AreEqual( 3, results.Length );
+			Assert.AreEqual( null, results[0] );
+			Assert.AreEqual( 123, results[1] );
+			Assert.AreEqual( true, results[2] );
+			Assert.AreEqual( "abc", _luaState.GetObject( "gs" ) );
+		}
+
+		[Test]
 		public void GetObject()
 		{
 			const string LUA_CODE = @"
@@ -119,7 +138,7 @@ return 0
 			object[] results = _luaState.DoBuffer( Encoding.UTF8.GetBytes( LUA_CHECK_CODE ) );
 
 			Assert.AreEqual( 1, results.Length );
-			Assert.AreEqual( 0, (int)(double) results[0] );
+			Assert.AreEqual( 0, results[0] );
 		}
 
 		[Test]
