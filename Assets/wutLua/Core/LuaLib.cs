@@ -75,6 +75,10 @@ namespace wutLua
 		//
 		// APIs
 		//
+		public static int lua_absindex( IntPtr L, int i )
+		{
+			return ( i > 0 || i <= LuaIndices.LUA_REGISTRYINDEX ) ? i : lua_gettop( L ) + i + 1;
+		}
 		[DllImport( LIBNAME, CallingConvention = CallingConvention.Cdecl )]
 		public static extern void lua_atpanic( IntPtr luaState, LuaCSFunction panicFunc );
 		[DllImport( LIBNAME, CallingConvention = CallingConvention.Cdecl )]
@@ -220,17 +224,17 @@ namespace wutLua
 		[DllImport( LIBNAME, CallingConvention = CallingConvention.Cdecl )]
 		public static extern int lua_status( IntPtr luaState );
 		[DllImport( LIBNAME, CallingConvention = CallingConvention.Cdecl )]
-		public static extern bool lua_toboolean( IntPtr luaState, int stackPos );
+		public static extern bool lua_toboolean( IntPtr luaState, int index );
 		[DllImport( LIBNAME, CallingConvention = CallingConvention.Cdecl )]
-		public static extern IntPtr lua_tocfunction( IntPtr luaState, int stackPos );
+		public static extern IntPtr lua_tocfunction( IntPtr luaState, int index );
 		[DllImport( LIBNAME, CallingConvention = CallingConvention.Cdecl )]
-		public static extern IntPtr lua_tolstring( IntPtr luaState, int stackPos, out IntPtr strLen );
+		public static extern IntPtr lua_tolstring( IntPtr luaState, int index, out IntPtr strLen );
 		[DllImport( LIBNAME, CallingConvention = CallingConvention.Cdecl )]
-		public static extern double lua_tonumber( IntPtr luaState, int stackPos );
-		public static string lua_tostring( IntPtr luaState, int stackPos )
+		public static extern double lua_tonumber( IntPtr luaState, int index );
+		public static string lua_tostring( IntPtr luaState, int index )
 		{
 			IntPtr len;
-			IntPtr str = lua_tolstring( luaState, stackPos, out len );
+			IntPtr str = lua_tolstring( luaState, index, out len );
 			int strLen = len.ToInt32();
 			if( str != IntPtr.Zero )
 			{
@@ -307,12 +311,12 @@ namespace wutLua
 		public static extern void luaL_openlibs( IntPtr luaState );
 		[DllImport( LIBNAME, CallingConvention = CallingConvention.Cdecl )]
 		public static extern int luaL_ref( IntPtr luaState, int tableIndex );
-		public static string luaL_typename( IntPtr luaState, int stackPos )
+		public static string luaL_typename( IntPtr luaState, int index )
 		{
-			return lua_typename( luaState, lua_type( luaState, stackPos ) );
+			return lua_typename( luaState, lua_type( luaState, index ) );
 		}
 		[DllImport( LIBNAME, CallingConvention = CallingConvention.Cdecl )]
-		public static extern void luaL_unref( IntPtr luaState, int stackPos, int reference );
+		public static extern void luaL_unref( IntPtr luaState, int tableIndex, int reference );
 		[DllImport( LIBNAME, CallingConvention = CallingConvention.Cdecl )]
 		public static extern void luaL_where( IntPtr luaState, int level );
 

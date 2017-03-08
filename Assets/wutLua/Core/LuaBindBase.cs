@@ -27,5 +27,18 @@
 		{
 			_currentMetatable.AddMember( name, function );
 		}
+
+		protected static bool _CheckLuaType( IntPtr L, int index, params LuaTypes[] luaTypes )
+		{
+			LuaTypes luaType = LuaLib.lua_type( L, 2 );
+
+			for( int i = 0; i < luaTypes.Length; ++i )
+			{
+				if( luaType == luaTypes[i] )
+					return true;
+			}
+
+			return false;
+		}
 	}
 }

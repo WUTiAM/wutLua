@@ -378,11 +378,7 @@
 							for( int i = 0; i < parametersInfo.Count(); ++i )
 							{
 								ParameterInfo pi = parametersInfo[i];
-
-								_WriteLine( "{0} arg{1} = ({0}) luaState.{2}( {1} );",
-									_GetTypeName( pi.ParameterType ),
-									i + 2,
-									pi.ParameterType == typeof( Type ) ? "ToType" : "ToObject" );
+								_WriteLine( _GetToObjectCode( i + 2, pi ) );
 							}
 
 							if( !methodHasParameters )
@@ -499,7 +495,7 @@
 
 							if( !isEveryParamCountUnique )
 							{
-								tc += string.Format( " && {0}", _GetLuaTypeCheckCode( i + 1, pi ) );
+								tc += string.Format( " && {0}", _GetLuaTypeCheckCode( i + 1 + offset, pi ) );
 							}
 
 							if( i > 0 )
@@ -541,11 +537,7 @@
 							for( int i = 0; i < parametersInfo.Count(); ++i )
 							{
 								ParameterInfo pi = parametersInfo[i];
-
-								_WriteLine( "{0} arg{1} = ({0}) luaState.{2}( {1} );",
-									_GetTypeName( pi.ParameterType ),
-									i + 1 + offset,
-									pi.ParameterType == typeof( Type ) ? "ToType" : "ToObject" );
+								_WriteLine( _GetToObjectCode( i + 1 + offset, pi ) );
 							}
 
 							if( !methodHasParameters )
@@ -674,18 +666,18 @@
 		static string _GetLuaTypeCheckCode( int i, ParameterInfo pi )
 		{
 			Type paramType = pi.ParameterType;
+
 			if( _IsParamArray( pi ) )
 			{
 				return string.Format(
-					"( LuaLib.lua_type( L, {0} ) == LuaTypes.LUA_TNONE || luaState.CheckParamArray( {0}, typeof( {1} ) ) )",
+					"( LuaLib.lua_type( L, {0} ) == LuaTypes.LUA_TNONE || luaState.CheckArray( {0}, argc - {1}, typeof( {2} ) ) )",
 					i,
+					i - 1,
 					_GetTypeName( paramType.GetElementType() ) );
 			}
 			else if( paramType == typeof( Type ) )
 			{
-				return string.Format(
-					"( LuaLib.lua_type( L, {0} ) == LuaTypes.LUA_TTABLE || LuaLib.lua_type( L, {0} ) == LuaTypes.LUA_TSTRING )",
-					i);
+				return string.Format( "LuaLib.lua_type( L, {0} ) == LuaTypes.LUA_TTABLE", i );
 			}
 			else if( paramType == typeof( bool ) )
 			{
@@ -697,17 +689,49 @@
 			}
 			else if( paramType == typeof( string ) )
 			{
-				return string.Format(
-					"( LuaLib.lua_isnil( L, {0} ) || LuaLib.lua_type( L, {0} ) == LuaTypes.LUA_TSTRING )",
-					i );
+				return string.Format( "_CheckLuaType( L, {0}, LuaTypes.LUA_TSTRING, LuaTypes.LUA_TNIL )", i );
 			}
 			else
 			{
-				return string.Format( "luaState.GetType( {0} ) == typeof( {1} )",
+				return string.Format( "luaState.CheckType( {0}, typeof( {1} ) )", i, _GetTypeName( paramType ) );
+			}
+		}
+
+		static string _GetToObjectCode( int i, ParameterInfo pi )
+		{
+			Type paramType = pi.ParameterType;
+
+			if( _IsParamArray( pi ) )
+			{
+				return string.Format( "{0} arg{1}; luaState.ToArray<{2}>( {1}, argc - {3}, out arg{1} );",
+					_GetTypeName( paramType ),
 					i,
-					_GetTypeName( paramType ) );
+					paramType.GetElementType(),
+					i - 1 );
 			}
+			if( paramType == typeof( Type ) )
+			{
+				return string.Format( "{0} arg{1}; luaState.ToType( {1}, out arg{1} );", _GetTypeName( paramType ), i );
 			}
+			if( paramType.IsEnum )
+			{
+				return string.Format( "{0} arg{1}; luaState.ToEnum( {1}, out arg{1} );", _GetTypeName( paramType ), i );
+			}
+			if( paramType == typeof( bool ) )
+			{
+				return string.Format( "{0} arg{1} = LuaLib.lua_toboolean( L, {1} );", paramType, i );
+			}
+			if( paramType.IsPrimitive )
+			{
+				return string.Format( "{0} arg{1} = ({0}) LuaLib.lua_tonumber( L, {1} );", paramType, i );
+			}
+			if( paramType == typeof( string ) )
+			{
+				return string.Format( "{0} arg{1} = LuaLib.lua_tostring( L, {1} );", paramType, i );
+			}
+
+			return string.Format( "{0} arg{1} = ({0}) luaState.ToObject( {1} );", _GetTypeName( paramType ), i );
+		}
 
 		static string _GetTypeName( Type type )
 		{

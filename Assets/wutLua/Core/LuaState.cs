@@ -1,4 +1,6 @@
-﻿namespace wutLua
+﻿using UnityEngine;
+
+namespace wutLua
 {
 	using System;
 	using System.Collections.Generic;
@@ -29,13 +31,9 @@
 		Dictionary<Type, LuaMetatable> _typeMetatables = new Dictionary<Type, LuaMetatable>();
 		Dictionary<Type, LuaMetatable> _objectMetatables = new Dictionary<Type, LuaMetatable>();
 
-		int _newObjectReference = 1;
+		int _newObjectUserdataValue = 1;
 		Dictionary<int, object> _objects = new Dictionary<int, object>();
-
-		public static LuaState Get( IntPtr L )
-		{
-			return _luaStates[L];
-		}
+		Dictionary<object, int> _objectUserdataRefIds = new Dictionary<object, int>();
 
 		public LuaState()
 		{
@@ -53,9 +51,12 @@
 			LuaCSFunction panicCallback = new LuaCSFunction( _PanicCallback );
 			LuaLib.lua_atpanic( L, panicCallback );
 
-			SetObject( "print", (LuaCSFunction) _Print );
+			Set( "print", (LuaCSFunction) _Print );
 
-			_Initialize();
+			LuaLib.lua_newtable( L );						// |t
+			LuaLib.lua_pushcsfunction( L, _ImportType );	// |t|csf
+			LuaLib.lua_setfield( L, -2, "ImportType" );		// |t
+			LuaLib.lua_setglobal( L, "wutLua" );			// |		// _G["wutLua"] = t
 
 			LuaBinder.Initialize( this );
 		}
@@ -78,15 +79,6 @@
 			return 0;
 		}
 
-		void _Initialize()
-		{
-			LuaLib.lua_newtable( L );						// |t
-			LuaLib.lua_pushcsfunction( L, _ImportType );	// |t|csf
-			LuaLib.lua_setfield( L, -2, "ImportType" );		// |t
-
-			LuaLib.lua_setglobal( L, "wutLua" );			// |		// _G["wutLua"] = t
-		}
-
 		[MonoPInvokeCallback( typeof( LuaCSFunction ) )]
 		int _ImportType( IntPtr L )
 		{
@@ -99,123 +91,51 @@
 				typeTable = null;
 			}
 
-			int oldTop = LuaLib.lua_gettop( L );
+			typeTable.Push();	// |t
 
-			LuaLib.lua_pushvalue( L, LuaIndices.LUA_GLOBALSINDEX );	// |_G
-
-			int startPos = 0;
-			int pos = typeFullName.IndexOf( '.' );
-			while( pos >= 0 )
-			{
-				string key = typeFullName.Substring( startPos, pos - startPos );
-				LuaLib.lua_pushstring( L, key ); 					// |_G|v1|...|vn-2|kn-1
-				LuaLib.lua_rawget( L, -2 ); 						// |_G|v1|...|vn-2|vn-1
-				if( LuaLib.lua_isnil( L, -1 ) )
-				{
-					LuaLib.lua_pop( L, 1 );							// |_G|v1|...|vn-2
-
-					LuaLib.lua_newtable( L );						// |_G|v1|...|vn-2|t
-					LuaLib.lua_pushvalue( L, -1 );					// |_G|v1|...|vn-2|t|t
-					LuaLib.lua_setfield( L, -3, key );				// |_G|v1|...|vn-2|t		// vn-2[key] = t, t == vn-1
-				}
-
-				startPos = pos + 1;
-				pos = typeFullName.IndexOf( '.', startPos );
-			}
-			string typeLastName = typeFullName.Substring( startPos, typeFullName.Length - startPos );
-			typeTable.Push();										// |_G|v1|v2|...|vn-1|t
-			LuaLib.lua_setfield( L, -2, typeLastName );				// |_G|v1|v2|...|vn-1|		// vn-1[typeLastName] = t	// typeLastName == kn, t == vn
-
-			LuaLib.lua_settop( L, oldTop );							// |
-
-			return 0;
+			return 1;
 		}
 
-		public void RegisterType( Type type, LuaCSFunction constructor )
-		{
-#if UNITY_EDITOR
-			UnityEngine.Debug.Assert( !_typeMetatables.ContainsKey( type ) );
-#endif
-
-			LuaTable typeTable = new LuaTable( this );
-			LuaMetatable typeMetatable = new LuaMetatable( this, type, true );
-
-			int oldTop = LuaLib.lua_gettop( L );
-
-			typeTable.RawSet( "__typeName", type.ToString() );
-			if( constructor != null )
-			{
-				typeMetatable.RawSet( "__call", constructor );	// |			// mt.__call = constructor
-			}
-			typeTable.Push();									// |t
-			typeMetatable.Push();								// |t|mt
-			LuaLib.lua_setmetatable( L, -2 );					// |t			// t.metatable = mt
-
-			LuaLib.lua_settop( L, oldTop );						// |
-
-			_typeNames.Add( type.ToString(), type );
-			_typeTables.Add( type, typeTable );
-			_typeMetatables.Add( type, typeMetatable );
-		}
-
-		public LuaMetatable GetTypeMetatable( Type type )
-		{
-			LuaMetatable metatable;
-			_typeMetatables.TryGetValue( type, out metatable );
-
-			return metatable;
-		}
-
-		public LuaMetatable GetObjectMetatable( Type type )
-		{
-			LuaMetatable metatable;
-			if( !_objectMetatables.TryGetValue( type, out metatable ) )
-			{
-				metatable = new LuaMetatable( this, type, false );
-
-				_objectMetatables.Add( type, metatable );
-			}
-
-			return metatable;
-		}
-
-		public Type GetType( int index )
-		{
-			// TODO
-
-			return typeof( void );
-		}
+		// -------------------------------------------------------------------------------------------------------------
+		// Public interfaces
+		// -------------------------------------------------------------------------------------------------------------
 
 		public object[] DoBuffer( byte[] chunk, string chunkName = "chunk" )
 		{
 			int oldTop = LuaLib.lua_gettop( L );
 
-			if( LuaLib.luaL_loadbuffer( L, chunk, chunk.Length, chunkName ) != 0 )
+			if( LuaLib.luaL_loadbuffer( L, chunk, chunk.Length, chunkName ) != 0 )	// |f or |err
 			{
-				string error = LuaLib.lua_tostring( L, -1 );
-				LuaLib.lua_settop( L, oldTop );
+				string error = LuaLib.lua_tostring( L, -1 );						// |err
+				LuaLib.lua_settop( L, oldTop );										// |
 
 				throw new LuaException( error );
 			}
-			if (LuaLib.lua_pcall( L, 0, -1, 0 ) != 0)
+			if( LuaLib.lua_pcall( L, 0, LuaLib.LUA_MULTRET, 0 ) != 0 )				// | or |ret1|ret2 or |err
 			{
-				string error = LuaLib.lua_tostring( L, -1 );
-				LuaLib.lua_settop( L, oldTop );
+				string error = LuaLib.lua_tostring( L, -1 );						// |err
+				LuaLib.lua_settop( L, oldTop );										// |
 
 				throw new LuaException( error );
 			}
 
-			return PopObjects( oldTop );
+			int top = LuaLib.lua_gettop( L );
+			if( top == oldTop )
+				return null;
+
+			var objects = new List<object>();
+
+			for( int i = oldTop + 1; i <= top; ++i )
+			{
+				objects.Add( ToObject( i ) );
+			}
+
+			LuaLib.lua_pop( L, top - oldTop );
+
+			return objects.ToArray();
 		}
 
-		public bool CheckParamArray( int index, Type type )
-		{
-			// TODO
-
-			return false;
-		}
-
-		public object GetObject( string path )
+		public object Get( string path )
 		{
 			int oldTop = LuaLib.lua_gettop( L );
 
@@ -246,10 +166,167 @@
 			return o;
 		}
 
+		public void Set( string path, object value )
+		{
+			int oldTop = LuaLib.lua_gettop( L );
+
+			LuaLib.lua_pushvalue( L, LuaIndices.LUA_GLOBALSINDEX );	// |_G
+
+			int startPos = 0;
+			int pos = path.IndexOf( '.' );
+			while( pos >= 0 )
+			{
+				string key = path.Substring( startPos, pos - startPos );
+
+				LuaLib.lua_pushstring( L, key ); 					// |_G|k1 or |_G|v1|k2 or |_G|v1|v2|k3 or ...
+				LuaLib.lua_rawget( L, -2 ); 						// |_G|v1 or |_G|v1|v2 or |_G|v1|v2|v3 or ...
+
+				if( LuaLib.lua_isnil( L, -1 ) )
+				{
+					startPos = path.Length;
+					break;
+				}
+
+				startPos = pos + 1;
+				pos = path.IndexOf( '.', startPos );
+			}
+
+			if( startPos < path.Length )
+			{
+				string key = path.Substring( startPos, path.Length - startPos );
+
+				PushObject( value );								// |_G|v1|v2|...|vn-1|o
+				LuaLib.lua_setfield( L, -2, key );					// |_G|v1|v2|...|vn-1|		// vn-1.kn = o
+			}
+
+			LuaLib.lua_settop( L, oldTop );							// |
+		}
+
+		// -------------------------------------------------------------------------------------------------------------
+		// Internal use only
+		// -------------------------------------------------------------------------------------------------------------
+
+		public static LuaState Get( IntPtr L )
+		{
+			return _luaStates[L];
+		}
+
+		public void RegisterType( Type type, LuaCSFunction constructor )
+		{
+#if UNITY_EDITOR
+			UnityEngine.Debug.Assert( !_typeMetatables.ContainsKey( type ) );
+#endif
+
+			LuaTable typeTable = new LuaTable( this );
+			LuaMetatable typeMetatable = new LuaMetatable( this, type, true );
+
+			typeTable.Push();									// |t
+			LuaLib.lua_pushstring( L, "__typeName" );			// |t|sk
+			LuaLib.lua_pushstring( L, type.ToString() );		// |t|sk|sv
+			LuaLib.lua_rawset( L, -3 );							// |t		// t.__typeName = typeName
+
+			typeMetatable.Push();								// |t|mt
+			if( constructor != null )
+			{
+				LuaLib.lua_pushstring( L, "__call" );			// |t|mt|s
+				LuaLib.lua_pushcsfunction( L, constructor );	// |t|mt|s|csf
+				LuaLib.lua_rawset( L, -3 );						// |t|mt		// mt.__call = constructor
+			}
+			LuaLib.lua_setmetatable( L, -2 );					// |t			// t.metatable = mt
+
+			LuaLib.lua_pop( L, 1 );								// |
+
+			_typeNames.Add( type.ToString(), type );
+			_typeTables.Add( type, typeTable );
+			_typeMetatables.Add( type, typeMetatable );
+		}
+
+		public LuaMetatable GetTypeMetatable( Type type )
+		{
+			LuaMetatable metatable;
+			_typeMetatables.TryGetValue( type, out metatable );
+
+			return metatable;
+		}
+
+		public LuaMetatable GetObjectMetatable( Type type )
+		{
+			LuaMetatable metatable;
+			if( !_objectMetatables.TryGetValue( type, out metatable ) )
+			{
+				metatable = new LuaMetatable( this, type, false );
+
+				_objectMetatables.Add( type, metatable );
+			}
+
+			return metatable;
+		}
+
+		public bool CheckType( int index, Type type )
+		{
+			if( type == typeof( object ) )
+				return true;
+
+			LuaTypes luaType = LuaLib.lua_type( L, index );
+			switch( luaType )
+			{
+				case LuaTypes.LUA_TBOOLEAN:
+					return type == typeof( bool );
+				case LuaTypes.LUA_TNUMBER:
+					return type.IsPrimitive;
+				case LuaTypes.LUA_TSTRING:
+					return type == typeof( string ) || type == typeof( char[] ) || type == typeof( byte[] );
+				case LuaTypes.LUA_TTABLE:
+				{
+					if( type.IsArray )
+					{
+						// TODO
+						return false;
+					}
+					if( type == typeof( Type ) )
+					{
+						LuaLib.lua_pushstring( L, "__typeName" );	// |k
+						LuaLib.lua_rawget( L, index );				// |v
+						bool ret = !LuaLib.lua_isnil( L, -1 );
+						LuaLib.lua_pop( L, 1 );						// |
+
+						return ret;
+					}
+
+					return false;
+				}
+				case LuaTypes.LUA_TFUNCTION:
+					return false;
+				case LuaTypes.LUA_TUSERDATA:
+					return false;
+			}
+
+			return false;
+		}
+
+		public bool CheckArray( int index, int count, Type type )
+		{
+			for( int i = 0; i < count; ++i )
+			{
+				if( !CheckType( index + i, type ) )
+				{
+					return false;
+				}
+			}
+
+			return true;
+		}
+
+
+
+
+
+
+
 		public object ToObject( int index )
 		{
-			LuaTypes type = LuaLib.lua_type( L, index );
-			switch( type )
+			LuaTypes luaType = LuaLib.lua_type( L, index );
+			switch( luaType )
 			{
 				case LuaTypes.LUA_TNONE:
 				case LuaTypes.LUA_TNIL:
@@ -275,7 +352,7 @@
 					LuaLib.lua_pushvalue( L, index ); 								// |t
 					LuaLib.lua_pushstring( L, "__valueType" ); 						// |t|k
 					LuaLib.lua_rawget( L, -2 );										// |t|vt
-					if( LuaLib.lua_isnil( L, -1 ) )									// |t|vt
+					if( !LuaLib.lua_isnil( L, -1 ) )
 					{
 						valueType = (LuaValueType) LuaLib.lua_tonumber( L, -1 );	// |t|vt
 					}
@@ -328,26 +405,118 @@
 			}
 		}
 
-		public Type ToType( int index )
+		public object ToObject( int index, Type type )
 		{
-			LuaTypes lt = LuaLib.lua_type( L, index );
-			if( lt == LuaTypes.LUA_TTABLE )
+			if( type == typeof( Type ) )
+			{
+				Type o;
+				ToType( index, out o );
+
+				return o;
+			}
+			if( type == typeof( bool ) )
+			{
+				return LuaLib.lua_toboolean( L, index );
+			}
+			if( type.IsPrimitive )
+			{
+				return LuaLib.lua_tonumber( L, index );
+			}
+			if( type == typeof( string ) )
+			{
+				return LuaLib.lua_tostring( L, index );
+			}
+
+			return ToObject( index );
+		}
+
+		public bool ToType( int index, out Type o )
+		{
+			o = null;
+
+			LuaTypes luaType = LuaLib.lua_type( L, index );
+			if( luaType == LuaTypes.LUA_TTABLE )
 			{
 				LuaLib.lua_pushstring( L, "__typeName" );	// |k
 				LuaLib.lua_rawget( L, index );				// |v
-
 				if( LuaLib.lua_isstring( L, -1 ) )
 				{
-					Type type;
-					if( _typeNames.TryGetValue( LuaLib.lua_tostring( L, -1 ), out type ) )
-					{
-						return type;
-					}
+					return _typeNames.TryGetValue( LuaLib.lua_tostring( L, -1 ), out o );
 				}
 			}
 
-			return null;
+			return true;
 		}
+
+		public void ToEnum<T>( int index, out T o )
+		{
+			o = default( T );
+		}
+
+		public void ToArray<T>( int index, int count, out T[] o )
+		{
+			o = new T[count];
+			for( int i = 0; i < count; ++i )
+			{
+				o[i] = (T) ToObject( index + i, typeof( T ) );
+			}
+		}
+
+		public void ToArray( int index, int count, out bool[] o )
+		{
+			o = new bool[count];
+			for( int i = 0; i < count; ++i )
+			{
+				o[i] = LuaLib.lua_toboolean( L, index + i );
+			}
+		}
+
+		public void ToArray( int index, int count, out double[] o )
+		{
+			o = new double[count];
+			for( int i = 0; i < count; ++i )
+			{
+				o[i] = LuaLib.lua_tonumber( L, index + i );
+			}
+		}
+
+		public void ToArray( int index, int count, out float[] o )
+		{
+			o = new float[count];
+			for( int i = 0; i < count; ++i )
+			{
+				o[i] = (float) LuaLib.lua_tonumber( L, index + i );
+			}
+		}
+
+		public void ToArray( int index, int count, out int[] o )
+		{
+			o = new int[count];
+			for( int i = 0; i < count; ++i )
+			{
+				o[i] = (int) LuaLib.lua_tonumber( L, index + i );
+			}
+		}
+
+		public void ToArray( int index, int count, out string[] o )
+		{
+			o = new string[count];
+			for( int i = 0; i < count; ++i )
+			{
+				o[i] = LuaLib.lua_tostring( L, index + i );
+			}
+		}
+
+
+
+
+
+
+
+
+
+
+
 
 		public LuaTable ToTable( int index )
 		{
@@ -460,58 +629,6 @@
 			_objects.TryGetValue( objectReference, out o );
 
 			return o;
-		}
-
-		public object[] PopObjects( int newTop )
-		{
-			int top = LuaLib.lua_gettop( L );
-			if( top == newTop )
-			{
-				return null;
-			}
-
-			var objects = new List<object>();
-
-			for( int i = newTop + 1; i <= top; ++i )
-			{
-				objects.Add( ToObject( i ) );
-			}
-
-			LuaLib.lua_settop( L, newTop );
-
-			return objects.ToArray();
-		}
-
-		public void SetObject( string path, object value )
-		{
-			int oldTop = LuaLib.lua_gettop( L );
-
-			LuaLib.lua_pushvalue( L, LuaIndices.LUA_GLOBALSINDEX );									// |_G
-
-			int startPos = 0;
-			int pos = path.IndexOf( '.' );
-			while( pos >= 0 )
-			{
-				LuaLib.lua_pushstring( L, path.Substring( startPos, pos - startPos ) ); 			// |_G|k1 or |_G|v1|k2 or |_G|v1|v2|k3 or ...
-				LuaLib.lua_rawget( L, -2 ); 														// |_G|v1 or |_G|v1|v2 or |_G|v1|v2|v3 or ...
-
-				if( LuaLib.lua_isnil( L, -1 ) )
-				{
-					startPos = path.Length;
-					break;
-				}
-
-				startPos = pos + 1;
-				pos = path.IndexOf( '.', startPos );
-			}
-
-			if( startPos < path.Length )
-			{
-				PushObject( value );																// |_G|v1|v2|...|vn-1|o
-				LuaLib.lua_setfield( L, -2, path.Substring( startPos, path.Length - startPos ) );	// |_G|v1|v2|...|vn-1|		// vn-1.kn = o
-			}
-
-			LuaLib.lua_settop( L, oldTop );															// |
 		}
 
 		public void PushObject( object o )
@@ -708,24 +825,33 @@
 				return;
 			}
 
-			LuaMetatable metatable = GetObjectMetatable( o.GetType() );
+			int refId;
+			if( !_objectUserdataRefIds.TryGetValue( o, out refId ) )
+			{
+				LuaMetatable metatable = GetObjectMetatable( o.GetType() );
 
-			int objectReference = _newObjectReference++;
-			LuaLib.wutlua_newuserdata( L, objectReference );			// |ud
-			metatable.Push();											// |ud|mt
-			LuaLib.lua_setmetatable( L, -2 );							// |ud		// ud.metatable = mt
+				int objectUserdataValue = _newObjectUserdataValue++;
+				LuaLib.wutlua_newuserdata( L, objectUserdataValue );		// |ud
+				metatable.Push();											// |ud|mt
+				LuaLib.lua_setmetatable( L, -2 );							// |ud		// ud.metatable = mt
 
-			_objects[objectReference] = o;
+				refId = LuaLib.luaL_ref( L, LuaIndices.LUA_REGISTRYINDEX );	// |
+
+				_objects[objectUserdataValue] = o;
+				_objectUserdataRefIds[o] = refId;
+			}
+			LuaLib.lua_rawgeti( L, LuaIndices.LUA_REGISTRYINDEX, refId );	// |ud
 		}
-
-
-
-
 
 		public void GCCSObject( int index )
 		{
 			int objectReference = LuaLib.wutlua_rawuserdata( L, index );
-			UnityEngine.Debug.Log( string.Format( "GC [{0}]: {1}", objectReference, _objects[objectReference].ToString() )  );
+			object o = _objects[objectReference];
+			int refId = _objectUserdataRefIds[o];
+			UnityEngine.Debug.Log( string.Format( "GC [{0}({1})]: {2}", objectReference, refId, o.ToString() ) );
+
+			LuaLib.luaL_unref( L, LuaIndices.LUA_REGISTRYINDEX, refId );
+			_objectUserdataRefIds.Remove( o );
 			_objects.Remove( objectReference );
 		}
 

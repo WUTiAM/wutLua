@@ -48,11 +48,11 @@ return nil, n, b
 			Assert.AreEqual( null, results[0] );
 			Assert.AreEqual( 123, results[1] );
 			Assert.AreEqual( true, results[2] );
-			Assert.AreEqual( "abc", _luaState.GetObject( "gs" ) );
+			Assert.AreEqual( "abc", _luaState.Get( "gs" ) );
 		}
 
 		[Test]
-		public void GetObject()
+		public void Get()
 		{
 			const string LUA_CODE = @"
 gb = true
@@ -73,37 +73,32 @@ gs = 'zyx'
 			_luaState.DoBuffer( Encoding.UTF8.GetBytes( LUA_CODE ) );
 
 			// Get bool
-			Assert.AreEqual( true, _luaState.GetObject( "gb" ) );
-			Assert.AreEqual( null, _luaState.GetObject( "gb2" ) );
+			Assert.AreEqual( true, _luaState.Get( "gb" ) );
+			Assert.AreEqual( null, _luaState.Get( "gb2" ) );
 
 			// Get number
-			Assert.AreEqual( 4321, _luaState.GetObject( "gn" ) );
-			Assert.AreEqual( 1234.5678, _luaState.GetObject( "gn2" ) );
+			Assert.AreEqual( 4321, _luaState.Get( "gn" ) );
+			Assert.AreEqual( 1234.5678, _luaState.Get( "gn2" ) );
 
 			// Get string
-			Assert.AreEqual( "zyx", _luaState.GetObject( "gs" ) );
-			Assert.AreEqual( null, _luaState.GetObject( "gs2" ) );
+			Assert.AreEqual( "zyx", _luaState.Get( "gs" ) );
+			Assert.AreEqual( null, _luaState.Get( "gs2" ) );
 
 			// Get table and access elements
-			LuaTable t = _luaState.GetObject( "gt" ) as LuaTable;
+			LuaTable t = _luaState.Get( "gt" ) as LuaTable;
 			Assert.AreEqual( null, t["b"] );
 			Assert.AreEqual( 1234, t["n"] );
 			Assert.AreEqual( "xyz", t["s"] );
 
 			// Get nested table element
-			Assert.AreEqual( true, _luaState.GetObject( "gt.t.b" ) );
-			Assert.AreEqual( null, _luaState.GetObject( "gt.t.n" ) );
-			Assert.AreEqual( null, _luaState.GetObject( "gt.t2.b" ) );
-			Assert.AreEqual( null, _luaState.GetObject( "gt2.t.b" ) );
+			Assert.AreEqual( true, _luaState.Get( "gt.t.b" ) );
+			Assert.AreEqual( null, _luaState.Get( "gt.t.n" ) );
+			Assert.AreEqual( null, _luaState.Get( "gt.t2.b" ) );
+			Assert.AreEqual( null, _luaState.Get( "gt2.t.b" ) );
 		}
 
 		[Test]
-		public void PushObject()
-		{
-		}
-
-		[Test]
-		public void SetObject()
+		public void Set()
 		{
 			const string LUA_CODE = @"
 gt = {
@@ -112,12 +107,12 @@ gt = {
 	},
 }
 			";
-			_luaState.SetObject( "gb", true );
+			_luaState.Set( "gb", true );
 			_luaState.DoBuffer( Encoding.UTF8.GetBytes( LUA_CODE ) );
 
-			_luaState.SetObject( "gb", false );
-			_luaState.SetObject( "gt.t.s", "abc" );
-			_luaState.SetObject( "gt.t2.s", "abc" );
+			_luaState.Set( "gb", false );
+			_luaState.Set( "gt.t.s", "abc" );
+			_luaState.Set( "gt.t2.s", "abc" );
 
 			const string LUA_CHECK_CODE = @"
 if gb ~= false then
@@ -141,9 +136,34 @@ return 0
 			Assert.AreEqual( 0, results[0] );
 		}
 
+//		[Test]
+//		public void ToObject()
+//		{
+//		}
+//
+//		[Test]
+//		public void PushObject()
+//		{
+//		}
+
 		[Test]
-		public void ToObject()
+		public void PushCSObject()
 		{
+			const string LUA_CODE = @"
+Camera = wutLua.ImportType( 'UnityEngine.Camera' )
+GameObject = wutLua.ImportType( 'UnityEngine.GameObject' )
+
+local cameraGO = GameObject( 'Camera', Camera )
+local cameraComponent = cameraGO:GetComponent( Camera )
+local cameraComponent2 = cameraGO:GetComponent( 'Camera' )
+
+return cameraComponent, cameraComponent2, cameraComponent == cameraComponent2
+			";
+			object[] results = _luaState.DoBuffer( Encoding.UTF8.GetBytes( LUA_CODE ) );
+
+			Assert.AreEqual( 3, results.Length );
+			Assert.AreSame( results[0], results[1] );
+			Assert.AreEqual( true, results[2] );
 		}
 	}
 }

@@ -140,13 +140,37 @@ return __newindex
 
 			_indexCacheTable = new LuaTable( luaState );					// |
 
-			RawSet( "__refId", _RefId );									// |		// mt.__refId = _RefId
-			RawSet( "__indexCache", _indexCacheTable );						// |		// mt.__indexCache = t
-			RawSet( "__index", luaState.MetatableIndexMetamethod );			// |		// mt.__index = f
-			RawSet( "__newindex", luaState.MetatableNewIndexMetamethod );	// |		// mt.__newindex = f
-			RawSet( "__gc", _gcMetamethod );								// |		// mt.__index = csf
-			RawSet( "getBaseMetatable", _getBaseMetatableMetamethod );		// |		// mt.getBaseMetatable = csf
-			RawSet( "getMember", _getMemberMetamethod );					// |		// mt.getMember = csf
+			Push();															// |mt
+
+			LuaLib.lua_pushstring( L, "__refId" );							// |mt|k
+			LuaLib.lua_pushinteger( L, _RefId );							// |mt|k|v
+			LuaLib.lua_rawset( L, -3 );										// |mt		// mt.__refId = _RefId
+
+			LuaLib.lua_pushstring( L, "__indexCache" );						// |mt|k
+			_indexCacheTable.Push();										// |mt|k|v
+			LuaLib.lua_rawset( L, -3 );										// |mt		// mt.__indexCache = t
+
+			LuaLib.lua_pushstring( L, "__index" );							// |mt|k
+			luaState.MetatableIndexMetamethod.Push();						// |mt|k|v
+			LuaLib.lua_rawset( L, -3 );										// |mt		// mt.__index = f
+
+			LuaLib.lua_pushstring( L, "__newindex" );						// |mt|k
+			luaState.MetatableNewIndexMetamethod.Push();					// |mt|k|v
+			LuaLib.lua_rawset( L, -3 );										// |mt		// mt.__newindex = f
+
+			LuaLib.lua_pushstring( L, "__gc" );								// |mt|k
+			LuaLib.lua_pushcsfunction( L, _gcMetamethod );					// |mt|k|v
+			LuaLib.lua_rawset( L, -3 );										// |mt		// mt.__index = csf
+
+			LuaLib.lua_pushstring( L, "getBaseMetatable" );					// |mt|k
+			LuaLib.lua_pushcsfunction( L, _getBaseMetatableMetamethod );	// |mt|k|v
+			LuaLib.lua_rawset( L, -3 );										// |mt		// mt.getBaseMetatable = csf
+
+			LuaLib.lua_pushstring( L, "getMember" );						// |mt|k
+			LuaLib.lua_pushcsfunction( L, _getMemberMetamethod );			// |mt|k|v
+			LuaLib.lua_rawset( L, -3 );										// |mt		// mt.getMember = csf
+
+			LuaLib.lua_pop( L, 1 );											// |
 
 			luaState.Metatables.Add( _RefId, this );
 		}
@@ -179,7 +203,9 @@ return __newindex
 				if( baseType == null || baseType == typeof( Object ) )
 				{
 					// No base type
-					self.RawSet( "__base", false );			// |mt		// mt.__base = false
+					LuaLib.lua_pushstring( L, "__base" );	// |mt|k
+					LuaLib.lua_pushboolean( L, false );		// |mt|k|v
+					LuaLib.lua_rawset( L, -3 );				// |mt		// mt.__base = false
 
 					return 0;
 				}
@@ -199,7 +225,9 @@ return __newindex
 				}
 			}
 
-			self.RawSet( "__base", self._baseMetatable );	// |mt		// mt.__base = basemt
+			LuaLib.lua_pushstring( L, "__base" );	// |mt|k
+			self._baseMetatable.Push();				// |mt|k|v
+			LuaLib.lua_rawset( L, -3 );				// |mt		// mt.__base = basemt
 
 			return 0;
 		}
@@ -216,7 +244,7 @@ return __newindex
 			LuaState luaState = LuaState.Get( L );
 
 			string memberName = LuaLib.lua_tostring( L, -1 );
-			object o = luaState.ToObject( -2 );
+			object o = luaState.ToCSObject( -2 );
 
 			// TODO: Reflection
 			LuaLib.lua_pushstring( L, memberName + ( o as UnityEngine.Object ).name );
@@ -228,7 +256,6 @@ return __newindex
 		public void AddMember( string name, LuaCSFunction getter, LuaCSFunction setter )
 		{
 			IntPtr L = _LuaState.L;
-			int oldTop = LuaLib.lua_gettop( L );
 
 			_indexCacheTable.Push();							// |t
 			LuaLib.lua_pushstring( L, name );					// |t|k
@@ -253,12 +280,20 @@ return __newindex
 			LuaLib.lua_rawseti( L, -2, 2 );						// |t|k|nt		// nt[2] = setter
 			LuaLib.lua_rawset( L, -3 );							// |t			// t[k] = nt, t == this.__indexCache, k == name
 
-			LuaLib.lua_settop( L, oldTop );						// |
+			LuaLib.lua_pop( L, 1 );								// |
 		}
 
 		public void AddMember( string name, LuaCSFunction function )
 		{
-			_indexCacheTable.RawSet( name, function );
+			IntPtr L = _LuaState.L;
+
+			_indexCacheTable.Push();					// |t
+
+			LuaLib.lua_pushstring( L, name );			// |t|k
+			LuaLib.lua_pushcsfunction( L, function );	// |t|k|v
+			LuaLib.lua_rawset( L, -3 );					// |t		// t.k = v
+
+			LuaLib.lua_pop( L, 1 );						// |
 		}
 
 #region LuaObjectBase members

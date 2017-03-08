@@ -1,10 +1,8 @@
-﻿using UnityEngine;
-
-namespace wutLua.Test
+﻿namespace wutLua.Test
 {
 	using NUnit.Framework;
-	using System.Runtime.CompilerServices;
 	using System.Text;
+	using UnityEngine;
 	using wutLua;
 
 	[TestFixture]
@@ -41,9 +39,9 @@ namespace wutLua.Test
 			GameObject go = new GameObject( "go" );
 
 			const string LUA_CODE = @"
-wutLua.ImportType( 'UnityEngine.GameObject' )
+GameObject = wutLua.ImportType( 'UnityEngine.GameObject' )
 
-local go = UnityEngine.GameObject.Find( 'go' )
+local go = GameObject.Find( 'go' )
 if go == nil then
 	return -1
 end
@@ -62,10 +60,10 @@ return 0
 			GameObject go = new GameObject( "go" );
 
 			const string LUA_CODE = @"
-wutLua.ImportType( 'UnityEngine.GameObject' )
+GameObject = wutLua.ImportType( 'UnityEngine.GameObject' )
 
-local go = UnityEngine.GameObject.Find( 'go' )
-UnityEngine.GameObject.DestroyImmediate( go, true )
+local go = GameObject.Find( 'go' )
+GameObject.DestroyImmediate( go, true )
 go = nil
 			";
 			_luaState.DoBuffer( Encoding.UTF8.GetBytes( LUA_CODE ) );
@@ -75,14 +73,14 @@ go = nil
 		public void AccessConstructor()
 		{
 			const string LUA_CODE = @"
-wutLua.ImportType( 'UnityEngine.GameObject' )
+GameObject = wutLua.ImportType( 'UnityEngine.GameObject' )
 
-local go = UnityEngine.GameObject( 'go' )
+local go = GameObject( 'go' )
 if go == nil or go.name ~= 'go' then
 	return -1
 end
 
-local go2 = UnityEngine.GameObject()
+local go2 = GameObject()
 if go2 == nil then
 	return -2
 end
@@ -99,9 +97,9 @@ return 0
 		public void AccessMemberFunctionInParent()
 		{
 			const string LUA_CODE = @"
-wutLua.ImportType( 'UnityEngine.GameObject' )
+GameObject = wutLua.ImportType( 'UnityEngine.GameObject' )
 
-local go = UnityEngine.GameObject( 'go' )
+local go = GameObject( 'go' )
 local name = go:ToString()
 local instanceId = go:GetInstanceID()
 
@@ -120,29 +118,30 @@ return name, instanceId
 			Camera go = new Camera();
 
 			const string LUA_CODE = @"
-wutLua.ImportType( 'UnityEngine.Camera' )
-wutLua.ImportType( 'UnityEngine.Object' )
+Camera = wutLua.ImportType( 'UnityEngine.Camera' )
+Object = wutLua.ImportType( 'UnityEngine.Object' )
 
-local camera = UnityEngine.Object.FindObjectOfType( UnityEngine.Camera )
-if camera == nil then
-	return -1
-end
+local camera = Object.FindObjectOfType( Camera )
+local cameraGO = camera.gameObject
+local cameraComponent = cameraGO:GetComponent( Camera )
 
-return 0
+return camera.enabled, camera, cameraComponent, camera == cameraComponent
 			";
 			object[] results = _luaState.DoBuffer( Encoding.UTF8.GetBytes( LUA_CODE ) );
 
-			Assert.AreEqual( 1, results.Length );
-			Assert.AreEqual( 0, results[0] );
+			Assert.AreEqual( 4, results.Length );
+			Assert.AreEqual( true, results[0] );
+			Assert.AreEqual( true, results[1] == results[2] );
+			Assert.AreEqual( true, results[3] );
 		}
 
 		[Test]
 		public void AccessMemberProperty()
 		{
 			const string LUA_CODE = @"
-wutLua.ImportType( 'UnityEngine.GameObject' )
+GameObject = wutLua.ImportType( 'UnityEngine.GameObject' )
 
-local go = UnityEngine.GameObject( 'go' )
+local go = GameObject( 'go' )
 local name = go.name
 go.name = 'gogogo'
 
@@ -161,9 +160,9 @@ return go, name
 		public void AccessInexistedMemberProperty()
 		{
 			const string LUA_CODE = @"
-wutLua.ImportType( 'UnityEngine.GameObject' )
+GameObject = wutLua.ImportType( 'UnityEngine.GameObject' )
 
-local go = UnityEngine.GameObject( 'go' )
+local go = GameObject( 'go' )
 local notExists = go.notExists
 go.notExists = 123
 			";
@@ -174,10 +173,10 @@ go.notExists = 123
 		public void TriggerObjectGC()
 		{
 			const string LUA_CODE = @"
-wutLua.ImportType( 'UnityEngine.GameObject' )
+GameObject = wutLua.ImportType( 'UnityEngine.GameObject' )
 
-local go = UnityEngine.GameObject()
-local go2 = UnityEngine.GameObject( 'go2' )
+local go = GameObject()
+local go2 = GameObject( 'go2' )
 
 go = nil
 go2 = nil

@@ -57,14 +57,13 @@
 		public void RawSet( string key, object value )
 		{
 			IntPtr L = _LuaState.L;
-			int oldTop = LuaLib.lua_gettop( L );
 
 			Push(); 							// |t
 			LuaLib.lua_pushstring( L, key );	// |t|k
 			_LuaState.PushObject( value );		// |t|k|v
 			LuaLib.lua_rawset( L, -3 );			// |t		// t.k = v
 
-			LuaLib.lua_settop( L, oldTop ); 	// |
+			LuaLib.lua_pop( L, 1 ); 			// |
 		}
 
 		protected object _GetValue( string key )

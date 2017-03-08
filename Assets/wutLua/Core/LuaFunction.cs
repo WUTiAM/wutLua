@@ -11,7 +11,7 @@ namespace wutLua
 
 		public LuaFunction( LuaState luaState, int index ) : base( luaState )
 		{
-			LuaLib.lua_pushvalue( luaState.L, index );									// |...|f|...|f
+			LuaLib.lua_pushvalue( luaState.L, index );								// |...|f|...|f
 			_RefId = LuaLib.luaL_ref( luaState.L, LuaIndices.LUA_REGISTRYINDEX );	// |...|f|...|		// Registry[reference] = f
 		}
 
@@ -34,19 +34,19 @@ namespace wutLua
 			IntPtr L = _LuaState.L;
 			int oldTop = LuaLib.lua_gettop( L );
 
-			LuaLib.lua_rawgeti( L, LuaIndices.LUA_REGISTRYINDEX, _RefId );		// |f
+			LuaLib.lua_rawgeti( L, LuaIndices.LUA_REGISTRYINDEX, _RefId );			// |f
 
 			if( args != null )
 			{
-				foreach( var arg in args )
+				for( int i = 0; i < args.Length; ++i )
 				{
-					_LuaState.PushObject( arg );									// |f|a1|a2|...
+					_LuaState.PushObject( args[i] );								// |f|a1|a2|...
 				}
 			}
 
-			if( LuaLib.lua_pcall( L, args.Length, LuaLib.LUA_MULTRET, 0 ) != 0 )	// | or |r1|r2|... or |e
+			if( LuaLib.lua_pcall( L, args.Length, LuaLib.LUA_MULTRET, 0 ) != 0 )	// | or |ret1|ret2|... or |err
 			{
-				string error = (string) _LuaState.ToObject( -1 );
+				string error = LuaLib.lua_tostring( L,  -1 );
 				LuaLib.lua_settop( L, oldTop );										// |
 
 				throw new LuaException( error );
