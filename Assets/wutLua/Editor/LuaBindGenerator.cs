@@ -1,4 +1,4 @@
-﻿namespace wutLua
+﻿namespace wuanLua
 {
 	using System;
 	using System.Collections.Generic;
@@ -42,7 +42,7 @@
 				_GenerateCodeForType( type, members );
 			}
 
-			_GenerateCodeForBinder( types );
+			_GenerateLuaBindingsCode( types );
 
 			_currentStreamWriter = null;
 			_currentIndent = 0;
@@ -206,11 +206,11 @@
 			{
 				_currentIndent = 0;
 
-				_WriteLine( "namespace wutLuaBind" );
+				_WriteLine( "namespace wuanLuaBind" );
 				_WriteLine( "{" );
 				{
 					_WriteLine( "using System;" );
-					_WriteLine( "using wutLua;" );
+					_WriteLine( "using wuanLua;" );
 					_WriteLine( "" );
 					_WriteLine( "public class {0} : LuaBindBase", className );
 					_WriteLine( "{" );
@@ -243,37 +243,53 @@
 
 		static void _WriteRegister( Type type, Members members )
 		{
-			_WriteLine( "public static void Register( LuaState luaState )" );
+			_WriteLine( "public static void Register()" );
 			_WriteLine( "{" );
 			{
-				_WriteLine( "_StartToRegisterTypeMembers( luaState, typeof( {0} ), {1} );",
+				_WriteLine( "_BeginTypeMembers( typeof( {0} ), {1} );",
 					type.FullName,
 					members.constructors.Count > 0 ? "_Constructor" : "null" );
-				foreach( var pair in members.staticMethods )
+				if( type.IsEnum )
 				{
-					_WriteLine( "_RegisterMember( \"{0}\", _static_{0} );", pair.Key );
+					foreach( string enumName in Enum.GetNames( type ) )
+					{
+						_WriteLine( "_AddMember( \"{0}\", {1} );",
+							enumName,
+							Convert.ToInt32( Enum.Parse( type, enumName ) ) );
+					}
 				}
-				foreach( PropertyInfo pi in members.staticProperties )
+				else
 				{
-					_WriteLine( "_RegisterMember( \"{0}\", {1}, {2} );",
-						pi.Name,
-						pi.GetGetMethod() != null ? string.Format( "_static_{0}_Getter", pi.Name ) : "null",
-						pi.GetSetMethod() != null ? string.Format( "_static_{0}_Setter", pi.Name ) : "null" );
+					foreach( var pair in members.staticMethods )
+					{
+						_WriteLine( "_AddMember( \"{0}\", _static_{0} );", pair.Key );
+					}
+					foreach( PropertyInfo pi in members.staticProperties )
+					{
+						_WriteLine( "_AddMember( \"{0}\", {1}, {2} );",
+							pi.Name,
+							pi.GetGetMethod() != null ? string.Format( "_static_{0}_Getter", pi.Name ) : "null",
+							pi.GetSetMethod() != null ? string.Format( "_static_{0}_Setter", pi.Name ) : "null" );
+					}
+					_WriteLine( "" );
+	
+					_WriteLine( "_BeginInstanceMembers( typeof( {0} ) );", type.FullName );
+					foreach( var pair in members.methods )
+					{
+						_WriteLine( "_AddMember( \"{0}\", _{0} );", pair.Key );
+					}
+					foreach( PropertyInfo pi in members.properties )
+					{
+						_WriteLine( "_AddMember( \"{0}\", {1}, {2} );",
+							pi.Name,
+							pi.GetGetMethod() != null ? string.Format( "_{0}_Getter", pi.Name ) : "null",
+							pi.GetSetMethod() != null ? string.Format( "_{0}_Setter", pi.Name ) : "null" );
+					}
+					
 				}
 				_WriteLine( "" );
 
-				_WriteLine( "_StartToRegisterObjectMembers( luaState, typeof( {0} ) );", type.FullName );
-				foreach( var pair in members.methods )
-				{
-					_WriteLine( "_RegisterMember( \"{0}\", _{0} );", pair.Key );
-				}
-				foreach( PropertyInfo pi in members.properties )
-				{
-					_WriteLine( "_RegisterMember( \"{0}\", {1}, {2} );",
-						pi.Name,
-						pi.GetGetMethod() != null ? string.Format( "_{0}_Getter", pi.Name ) : "null",
-						pi.GetSetMethod() != null ? string.Format( "_{0}_Setter", pi.Name ) : "null" );
-				}
+				_WriteLine( "_RegisterType( typeof( {0} ) );", type.FullName );
 			}
 			_WriteLine( "}" );
 		}
@@ -608,9 +624,22 @@
 						{
 							_WriteLine( "{0} self = luaState.ToCSObject( 1 ) as {0};", propertyInfo.DeclaringType );
 						}
-						_WriteLine( "luaState.PushObject( {0}.{1} );",
-							mi.IsStatic ? propertyInfo.DeclaringType.ToString() : "self",
-							propertyInfo.Name );
+
+						ParameterInfo[] parametersInfo = propertyInfo.GetIndexParameters();
+						// It's an indexer
+						if( parametersInfo.Any() )
+						{
+							ParameterInfo pi = parametersInfo[0];
+							_WriteLine( _GetToObjectCode( 2, pi ) );
+							_WriteLine( "luaState.PushObject( self[arg2] );" );
+						}
+						// Normal property
+						else
+						{
+							_WriteLine( "luaState.PushObject( {0}.{1} );",
+								mi.IsStatic ? propertyInfo.DeclaringType.ToString() : "self",
+								propertyInfo.Name );
+						}
 						_WriteLine( "" );
 						_WriteLine( "return 1;" );
 					}
@@ -670,31 +699,33 @@
 			if( _IsParamArray( pi ) )
 			{
 				return string.Format(
-					"( LuaLib.lua_type( L, {0} ) == LuaTypes.LUA_TNONE || luaState.CheckArray( {0}, argc - {1}, typeof( {2} ) ) )",
+					"( LuaLib.lua_type( L, {0} ) == LuaTypes.LUA_TNONE || luaState.CheckParamArray( {0}, argc - {1}, typeof( {2} ) ) )",
 					i,
 					i - 1,
 					_GetTypeName( paramType.GetElementType() ) );
 			}
-			else if( paramType == typeof( Type ) )
+			if( paramType == typeof( Type ) )
 			{
 				return string.Format( "LuaLib.lua_type( L, {0} ) == LuaTypes.LUA_TTABLE", i );
 			}
-			else if( paramType == typeof( bool ) )
-			{
-				return string.Format( "LuaLib.lua_type( L, {0} ) == LuaTypes.LUA_TBOOLEAN", i );
-			}
-			else if( paramType.IsPrimitive )
+			if( paramType.IsEnum )
 			{
 				return string.Format( "LuaLib.lua_type( L, {0} ) == LuaTypes.LUA_TNUMBER", i );
 			}
-			else if( paramType == typeof( string ) )
+			if( paramType == typeof( bool ) )
+			{
+				return string.Format( "LuaLib.lua_type( L, {0} ) == LuaTypes.LUA_TBOOLEAN", i );
+			}
+			if( paramType.IsPrimitive )
+			{
+				return string.Format( "LuaLib.lua_type( L, {0} ) == LuaTypes.LUA_TNUMBER", i );
+			}
+			if( paramType == typeof( string ) )
 			{
 				return string.Format( "_CheckLuaType( L, {0}, LuaTypes.LUA_TSTRING, LuaTypes.LUA_TNIL )", i );
 			}
-			else
-			{
-				return string.Format( "luaState.CheckType( {0}, typeof( {1} ) )", i, _GetTypeName( paramType ) );
-			}
+
+			return string.Format( "luaState.CheckType( {0}, typeof( {1} ) )", i, _GetTypeName( paramType ) );
 		}
 
 		static string _GetToObjectCode( int i, ParameterInfo pi )
@@ -703,7 +734,7 @@
 
 			if( _IsParamArray( pi ) )
 			{
-				return string.Format( "{0} arg{1}; luaState.ToArray<{2}>( {1}, argc - {3}, out arg{1} );",
+				return string.Format( "{0} arg{1}; luaState.ToParamArray<{2}>( {1}, argc - {3}, out arg{1} );",
 					_GetTypeName( paramType ),
 					i,
 					paramType.GetElementType(),
@@ -780,28 +811,31 @@
 			return pi.GetCustomAttributes( typeof( ParamArrayAttribute ), false ).Any();
 		}
 
-		static void _GenerateCodeForBinder( List<Type> types )
+		static void _GenerateLuaBindingsCode( List<Type> types )
 		{
-			string path = Path.Combine( _GENERATE_ROOT_PATH, "LuaBinder.cs" );
+			string path = Path.Combine( _GENERATE_ROOT_PATH, "LuaBindings.cs" );
 
 			using( _currentStreamWriter = new StreamWriter( path, false, Encoding.UTF8 ) )
 			{
 				_currentIndent = 0;
 
-				_WriteLine( "namespace wutLua" );
+				_WriteLine( "namespace wuanLua" );
 				_WriteLine( "{" );
 				{
-					_WriteLine( "using wutLuaBind;" );
+					_WriteLine( "using wuanLuaBind;" );
 					_WriteLine( "" );
-					_WriteLine( "public partial class LuaBinder" );
+					_WriteLine( "public partial class LuaBindings" );
 					_WriteLine( "{" );
 					{
-						_WriteLine( "static partial void _Initialize( LuaState luaState )" );
+						_WriteLine( "partial void _InitializeBindings()" );
 						_WriteLine( "{" );
 						{
+							_WriteLine( "LuaBindBase.LuaState = _luaState;" );
+							_WriteLine( "" );
+
 							foreach( Type type in types )
 							{
-								_WriteLine( "LuaBind_{0}.Register( luaState );", type.FullName.Replace( '.', '_' ) );
+								_WriteLine( "LuaBind_{0}.Register();", type.FullName.Replace( '.', '_' ) );
 							}
 						}
 						_WriteLine( "}" );

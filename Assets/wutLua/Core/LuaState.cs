@@ -1,6 +1,4 @@
-﻿using UnityEngine;
-
-namespace wutLua
+﻿namespace wuanLua
 {
 	using System;
 	using System.Collections.Generic;
@@ -20,16 +18,9 @@ namespace wutLua
 	{
  		public IntPtr L { get; private set; }
 
-		public LuaFunction MetatableIndexMetamethod;
-		public LuaFunction MetatableNewIndexMetamethod;
-		public Dictionary<int, LuaMetatable> Metatables = new Dictionary<int, LuaMetatable>();
+		public LuaBindings Bindings { get; private set; }
 
 		static Dictionary<IntPtr, LuaState> _luaStates = new Dictionary<IntPtr, LuaState>();
-
-		Dictionary<string, Type> _typeNames = new Dictionary<string, Type>();
-		Dictionary<Type, LuaTable> _typeTables = new Dictionary<Type, LuaTable>();
-		Dictionary<Type, LuaMetatable> _typeMetatables = new Dictionary<Type, LuaMetatable>();
-		Dictionary<Type, LuaMetatable> _objectMetatables = new Dictionary<Type, LuaMetatable>();
 
 		int _newObjectUserdataValue = 1;
 		Dictionary<int, object> _objects = new Dictionary<int, object>();
@@ -58,7 +49,8 @@ namespace wutLua
 			LuaLib.lua_setfield( L, -2, "ImportType" );		// |t
 			LuaLib.lua_setglobal( L, "wutLua" );			// |		// _G["wutLua"] = t
 
-			LuaBinder.Initialize( this );
+			Bindings = new LuaBindings( this );
+			Bindings.Initialize();
 		}
 
 		[MonoPInvokeCallback( typeof( LuaCSFunction ) )]
@@ -83,15 +75,7 @@ namespace wutLua
 		int _ImportType( IntPtr L )
 		{
 			string typeFullName = LuaLib.lua_tostring( L, -1 );
-			Type type;
-			LuaTable typeTable;
-			if( !_typeNames.TryGetValue( typeFullName, out type ) || !_typeTables.TryGetValue( type, out typeTable ) )
-			{
-				// TODO: Reflection
-				typeTable = null;
-			}
-
-			typeTable.Push();	// |t
+			Bindings.ImportTypeToLua( typeFullName );
 
 			return 1;
 		}
@@ -211,57 +195,6 @@ namespace wutLua
 			return _luaStates[L];
 		}
 
-		public void RegisterType( Type type, LuaCSFunction constructor )
-		{
-#if UNITY_EDITOR
-			UnityEngine.Debug.Assert( !_typeMetatables.ContainsKey( type ) );
-#endif
-
-			LuaTable typeTable = new LuaTable( this );
-			LuaMetatable typeMetatable = new LuaMetatable( this, type, true );
-
-			typeTable.Push();									// |t
-			LuaLib.lua_pushstring( L, "__typeName" );			// |t|sk
-			LuaLib.lua_pushstring( L, type.ToString() );		// |t|sk|sv
-			LuaLib.lua_rawset( L, -3 );							// |t		// t.__typeName = typeName
-
-			typeMetatable.Push();								// |t|mt
-			if( constructor != null )
-			{
-				LuaLib.lua_pushstring( L, "__call" );			// |t|mt|s
-				LuaLib.lua_pushcsfunction( L, constructor );	// |t|mt|s|csf
-				LuaLib.lua_rawset( L, -3 );						// |t|mt		// mt.__call = constructor
-			}
-			LuaLib.lua_setmetatable( L, -2 );					// |t			// t.metatable = mt
-
-			LuaLib.lua_pop( L, 1 );								// |
-
-			_typeNames.Add( type.ToString(), type );
-			_typeTables.Add( type, typeTable );
-			_typeMetatables.Add( type, typeMetatable );
-		}
-
-		public LuaMetatable GetTypeMetatable( Type type )
-		{
-			LuaMetatable metatable;
-			_typeMetatables.TryGetValue( type, out metatable );
-
-			return metatable;
-		}
-
-		public LuaMetatable GetObjectMetatable( Type type )
-		{
-			LuaMetatable metatable;
-			if( !_objectMetatables.TryGetValue( type, out metatable ) )
-			{
-				metatable = new LuaMetatable( this, type, false );
-
-				_objectMetatables.Add( type, metatable );
-			}
-
-			return metatable;
-		}
-
 		public bool CheckType( int index, Type type )
 		{
 			if( type == typeof( object ) )
@@ -278,11 +211,6 @@ namespace wutLua
 					return type == typeof( string ) || type == typeof( char[] ) || type == typeof( byte[] );
 				case LuaTypes.LUA_TTABLE:
 				{
-					if( type.IsArray )
-					{
-						// TODO
-						return false;
-					}
 					if( type == typeof( Type ) )
 					{
 						LuaLib.lua_pushstring( L, "__typeName" );	// |k
@@ -298,13 +226,19 @@ namespace wutLua
 				case LuaTypes.LUA_TFUNCTION:
 					return false;
 				case LuaTypes.LUA_TUSERDATA:
-					return false;
+				{
+					int objectReference = LuaLib.wutlua_rawuserdata( L, index );
+					object o;
+					if( !_objects.TryGetValue( objectReference, out o ) )
+						return false;
+					return type.IsAssignableFrom( o.GetType() );
+				}
 			}
 
 			return false;
 		}
 
-		public bool CheckArray( int index, int count, Type type )
+		public bool CheckParamArray( int index, int count, Type type )
 		{
 			for( int i = 0; i < count; ++i )
 			{
@@ -441,7 +375,7 @@ namespace wutLua
 				LuaLib.lua_rawget( L, index );				// |v
 				if( LuaLib.lua_isstring( L, -1 ) )
 				{
-					return _typeNames.TryGetValue( LuaLib.lua_tostring( L, -1 ), out o );
+					return Bindings.GetRegisteredTypeByName( LuaLib.lua_tostring( L, -1 ), out o );
 				}
 			}
 
@@ -453,7 +387,7 @@ namespace wutLua
 			o = default( T );
 		}
 
-		public void ToArray<T>( int index, int count, out T[] o )
+		public void ToParamArray<T>( int index, int count, out T[] o )
 		{
 			o = new T[count];
 			for( int i = 0; i < count; ++i )
@@ -462,7 +396,7 @@ namespace wutLua
 			}
 		}
 
-		public void ToArray( int index, int count, out bool[] o )
+		public void ToParamArray( int index, int count, out bool[] o )
 		{
 			o = new bool[count];
 			for( int i = 0; i < count; ++i )
@@ -471,7 +405,7 @@ namespace wutLua
 			}
 		}
 
-		public void ToArray( int index, int count, out double[] o )
+		public void ToParamArray( int index, int count, out double[] o )
 		{
 			o = new double[count];
 			for( int i = 0; i < count; ++i )
@@ -480,7 +414,7 @@ namespace wutLua
 			}
 		}
 
-		public void ToArray( int index, int count, out float[] o )
+		public void ToParamArray( int index, int count, out float[] o )
 		{
 			o = new float[count];
 			for( int i = 0; i < count; ++i )
@@ -489,7 +423,7 @@ namespace wutLua
 			}
 		}
 
-		public void ToArray( int index, int count, out int[] o )
+		public void ToParamArray( int index, int count, out int[] o )
 		{
 			o = new int[count];
 			for( int i = 0; i < count; ++i )
@@ -498,7 +432,7 @@ namespace wutLua
 			}
 		}
 
-		public void ToArray( int index, int count, out string[] o )
+		public void ToParamArray( int index, int count, out string[] o )
 		{
 			o = new string[count];
 			for( int i = 0; i < count; ++i )
@@ -685,11 +619,7 @@ namespace wutLua
 			}
 			else
 			{
-				if( type.IsArray )
-				{
-					PushArray( (Array) o );
-				}
-				else if( type == typeof( string ) )
+				if( type == typeof( string ) )
 				{
 					LuaLib.lua_pushstring( L, (string) o );
 				}
@@ -812,11 +742,6 @@ namespace wutLua
 			PushCSObject( o );
 		}
 
-		public void PushArray( Array array )
-		{
-			// TODO
-		}
-
 		public void PushCSObject( object o )
 		{
 			if( o == null )
@@ -828,7 +753,7 @@ namespace wutLua
 			int refId;
 			if( !_objectUserdataRefIds.TryGetValue( o, out refId ) )
 			{
-				LuaMetatable metatable = GetObjectMetatable( o.GetType() );
+				LuaBindMetatable metatable = Bindings.GetMetatable( o.GetType(), LuaBindMetatableType.Instance );
 
 				int objectUserdataValue = _newObjectUserdataValue++;
 				LuaLib.wutlua_newuserdata( L, objectUserdataValue );		// |ud

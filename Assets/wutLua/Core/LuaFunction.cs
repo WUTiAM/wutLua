@@ -1,6 +1,6 @@
 ﻿using System.Diagnostics;
 
-namespace wutLua
+namespace wuanLua
 {
 	using System;
 	using System.Collections.Generic;

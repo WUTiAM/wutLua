@@ -1,4 +1,4 @@
-namespace wutLua
+namespace wuanLua
 {
 	using System;
 	using System.Runtime.InteropServices;
@@ -11,7 +11,7 @@ namespace wutLua
         }
 	}
 
-	public enum LuaTypes
+	public enum LuaTypes // TODO: rename to LuaType
 	{
 		LUA_TNONE = -1,
 		LUA_TNIL = 0,
@@ -25,7 +25,7 @@ namespace wutLua
 		LUA_TTHREAD = 8,
 	}
 
-	public enum LuaGCOptions
+	public enum LuaGCOptions // TODO: rename to LuaGCOption
 	{
 		LUA_GCSTOP = 0,
 		LUA_GCRESTART = 1,

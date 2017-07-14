@@ -1,5 +1,5 @@
 ﻿using UnityEngine;
-using wutLua;
+using wuanLua;
 
 public class HelloWorld : MonoBehaviour
 {

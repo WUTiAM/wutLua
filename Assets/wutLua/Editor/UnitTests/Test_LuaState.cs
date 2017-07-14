@@ -1,20 +1,22 @@
-﻿namespace wutLua.Test
+﻿using UnityEngine;
+
+namespace wuanLua.Test
 {
 	using NUnit.Framework;
 	using System.Text;
-	using wutLua;
+	using wuanLua;
 
 	[TestFixture]
 	public class Test_LuaState
 	{
 		LuaState _luaState;
 
-		[TestFixtureSetUp]
+		[OneTimeSetUp]
 		public void Start()
 		{
 		}
 
-		[TestFixtureTearDown]
+		[OneTimeTearDown]
 		public void End()
 		{
 		}
@@ -45,7 +47,7 @@ return nil, n, b
 			object[] results = _luaState.DoBuffer( Encoding.UTF8.GetBytes( LUA_CODE ) );
 
 			Assert.AreEqual( 3, results.Length );
-			Assert.AreEqual( null, results[0] );
+			Assert.IsNull( results[0] );
 			Assert.AreEqual( 123, results[1] );
 			Assert.AreEqual( true, results[2] );
 			Assert.AreEqual( "abc", _luaState.Get( "gs" ) );
@@ -74,7 +76,7 @@ gs = 'zyx'
 
 			// Get bool
 			Assert.AreEqual( true, _luaState.Get( "gb" ) );
-			Assert.AreEqual( null, _luaState.Get( "gb2" ) );
+			Assert.IsNull( _luaState.Get( "gb2" ) );
 
 			// Get number
 			Assert.AreEqual( 4321, _luaState.Get( "gn" ) );
@@ -82,19 +84,19 @@ gs = 'zyx'
 
 			// Get string
 			Assert.AreEqual( "zyx", _luaState.Get( "gs" ) );
-			Assert.AreEqual( null, _luaState.Get( "gs2" ) );
+			Assert.IsNull( _luaState.Get( "gs2" ) );
 
 			// Get table and access elements
 			LuaTable t = _luaState.Get( "gt" ) as LuaTable;
-			Assert.AreEqual( null, t["b"] );
+			Assert.IsNull( t["b"] );
 			Assert.AreEqual( 1234, t["n"] );
 			Assert.AreEqual( "xyz", t["s"] );
 
 			// Get nested table element
 			Assert.AreEqual( true, _luaState.Get( "gt.t.b" ) );
-			Assert.AreEqual( null, _luaState.Get( "gt.t.n" ) );
-			Assert.AreEqual( null, _luaState.Get( "gt.t2.b" ) );
-			Assert.AreEqual( null, _luaState.Get( "gt2.t.b" ) );
+			Assert.IsNull( _luaState.Get( "gt.t.n" ) );
+			Assert.IsNull( _luaState.Get( "gt.t2.b" ) );
+			Assert.IsNull( _luaState.Get( "gt2.t.b" ) );
 		}
 
 		[Test]
@@ -134,36 +136,6 @@ return 0
 
 			Assert.AreEqual( 1, results.Length );
 			Assert.AreEqual( 0, results[0] );
-		}
-
-//		[Test]
-//		public void ToObject()
-//		{
-//		}
-//
-//		[Test]
-//		public void PushObject()
-//		{
-//		}
-
-		[Test]
-		public void PushCSObject()
-		{
-			const string LUA_CODE = @"
-Camera = wutLua.ImportType( 'UnityEngine.Camera' )
-GameObject = wutLua.ImportType( 'UnityEngine.GameObject' )
-
-local cameraGO = GameObject( 'Camera', Camera )
-local cameraComponent = cameraGO:GetComponent( Camera )
-local cameraComponent2 = cameraGO:GetComponent( 'Camera' )
-
-return cameraComponent, cameraComponent2, cameraComponent == cameraComponent2
-			";
-			object[] results = _luaState.DoBuffer( Encoding.UTF8.GetBytes( LUA_CODE ) );
-
-			Assert.AreEqual( 3, results.Length );
-			Assert.AreSame( results[0], results[1] );
-			Assert.AreEqual( true, results[2] );
 		}
 	}
 }
