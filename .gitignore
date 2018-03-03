@@ -12,3 +12,4 @@ Source/ios/Build
 Source/osx/build
 Assets/wutLua/Generated
 Generated.meta
+*.user
